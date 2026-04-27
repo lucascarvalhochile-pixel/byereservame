@@ -25,6 +25,116 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB max upload
 DB_PATH = os.environ.get("DB_PATH", "byereservame.db")
 ADMIN_SETUP_KEY = os.environ.get("ADMIN_SETUP_KEY", "lcturismo2026")
 
+# ─── Destination Classifier ─────────────────────────────────────────────────
+
+DESTINOS_VALIDOS = [
+    "Santiago", "Atacama", "Uyuni", "Cusco", "Lima",
+    "San Andres", "Cartagena", "Buenos Aires", "Bariloche",
+    "Mendoza", "Ushuaia", "El Calafate", "Punta Cana", "Cancún"
+]
+
+DESTINO_TO_PAIS = {
+    "Santiago": "Chile", "Atacama": "Chile", "Uyuni": "Chile",
+    "Torres del Paine": "Chile",
+    "Cusco": "Peru", "Lima": "Peru",
+    "San Andres": "Colômbia", "Cartagena": "Colômbia",
+    "Buenos Aires": "Argentina", "Bariloche": "Argentina",
+    "Mendoza": "Argentina", "Ushuaia": "Argentina", "El Calafate": "Argentina",
+    "Punta Cana": "República Dominicana",
+    "Cancún": "México",
+}
+
+def get_pais(destino):
+    """Retorna o país a partir do destino (cidade)."""
+    return DESTINO_TO_PAIS.get(destino, "Chile")
+
+def classify_destino(tour):
+    """Classifica o destino (nível cidade) a partir do nome do tour.
+    Regras validadas pelo Lucas em 27/04/2026 (55 correções aplicadas)."""
+    t = (tour or "").strip()
+    tl = t.lower()
+
+    # ── Atacama / Uyuni (checar antes de Chile genérico) ──
+    if "chi atma" in tl or "chiata" in tl or "atacama" in tl:
+        return "Atacama"
+    if "uyuni" in tl:
+        return "Uyuni"
+
+    # ── Peru (Cusco vs Lima) ──
+    if any(kw in tl for kw in ("cusco", "koricancha", "machu", "humantay", "sacred",
+            "valle sagrado", "moray", "salineras", "rainbow", "7 cores",
+            "montanha 7", "ausangate", "boleto tur", "titicaca")):
+        return "Cusco"
+    if t.startswith(("Y Per", "Ww Pr", "Yz Per")):
+        if any(kw in tl for kw in ("lima", "barranco", "miraflores", "ballesta", "huacachina", "pachacamac")):
+            return "Lima"
+        return "Cusco"
+
+    # ── Colômbia (San Andrés vs Cartagena) ──
+    if t.startswith(("Y Sai", "Yz Sai")):
+        return "San Andres"
+    if t.startswith(("Yz Ctg", "Y Col Ctg")):
+        return "Cartagena"
+    if t.startswith("Y Col"):
+        if any(kw in tl for kw in ("sai", "san andre")):
+            return "San Andres"
+        return "Cartagena"
+
+    # ── Argentina (por cidade) — incluindo prefixo "Zz Arg" ──
+    if t.startswith(("Z Arg", "Zz Arg")) or "buenos aires" in tl:
+        if "brc" in tl or "bariloche" in tl:
+            return "Bariloche"
+        if "mendoza" in tl:
+            return "Mendoza"
+        if "ush" in tl or "ushuaia" in tl:
+            return "Ushuaia"
+        if "calafate" in tl:
+            return "El Calafate"
+        return "Buenos Aires"
+    if "bariloche" in tl:
+        return "Bariloche"
+    if "mendoza" in tl:
+        return "Mendoza"
+    if "ushuaia" in tl:
+        return "Ushuaia"
+    if "calafate" in tl:
+        return "El Calafate"
+
+    # ── Rep. Dominicana ──
+    if t.startswith("X Rd") or "punta cana" in tl or "saona" in tl or "bavaro" in tl:
+        return "Punta Cana"
+
+    # ── México ──
+    if t.startswith("X Mex") or "cancun" in tl or "tulum" in tl or "chichen" in tl:
+        return "Cancún"
+
+    # ── Chile / Santiago (default para Zz/Zzz/Zerando) ──
+    # Checar sub-destinos Chile antes do fallback Santiago
+    if t.startswith(("Zz", "Zzz")):
+        # Zz Chi Atma = Atacama
+        if "chi atma" in tl or "atma" in tl:
+            return "Atacama"
+        # Zz Arg = Argentina
+        if "arg" in tl:
+            if "brc" in tl or "bariloche" in tl:
+                return "Bariloche"
+            if "ush" in tl or "ushuaia" in tl:
+                return "Ushuaia"
+            return "Buenos Aires"
+        return "Santiago"
+    if t.startswith("Zerando"):
+        if "bariloche" in tl or "brc" in tl:
+            return "Bariloche"
+        return "Santiago"
+
+    # Fallback: keywords Chile
+    if any(kw in tl for kw in ("portillo", "farellones", "valle nevado", "vinicola",
+            "concha", "undurraga", "haras", "isla negra", "safari", "cordilheira",
+            "skiday", "panoram", "cajon", "transfer")):
+        return "Santiago"
+
+    return "Santiago"
+
 # ─── Database ────────────────────────────────────────────────────────────────
 
 def get_db():
@@ -66,7 +176,9 @@ def init_db():
             valor TEXT,
             pendiente TEXT,
             ano INTEGER,
-            mes INTEGER
+            mes INTEGER,
+            destino TEXT DEFAULT '',
+            pais TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS venda_obs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +198,31 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_vendas_ano ON vendas(ano);
         CREATE INDEX IF NOT EXISTS idx_obs_ce ON venda_obs(ce_id);
         CREATE INDEX IF NOT EXISTS idx_anexos_ce ON venda_anexos(ce_id);
+        CREATE INDEX IF NOT EXISTS idx_vendas_destino ON vendas(destino);
+        CREATE INDEX IF NOT EXISTS idx_vendas_pais ON vendas(pais);
     """)
+    # Migration: add destino column if missing (existing DBs)
+    cols = [row[1] for row in db.execute("PRAGMA table_info(vendas)").fetchall()]
+    if "destino" not in cols:
+        db.execute("ALTER TABLE vendas ADD COLUMN destino TEXT DEFAULT ''")
+        db.commit()
+        print("Migration: added 'destino' column to vendas", flush=True)
+    if "pais" not in cols:
+        db.execute("ALTER TABLE vendas ADD COLUMN pais TEXT DEFAULT ''")
+        db.commit()
+        print("Migration: added 'pais' column to vendas", flush=True)
+    # Backfill/reclassify ALL vendas (destino + pais) on every startup
+    # This ensures any corrections to classify_destino are applied
+    all_rows = db.execute("SELECT id, tour FROM vendas").fetchall()
+    updated = 0
+    for row in all_rows:
+        dest = classify_destino(row[1])
+        pais = get_pais(dest)
+        db.execute("UPDATE vendas SET destino = ?, pais = ? WHERE id = ?", (dest, pais, row[0]))
+        updated += 1
+    if updated:
+        db.commit()
+        print(f"Backfill: classified {updated} vendas (destino + pais)", flush=True)
     # Create default admin if no users exist
     cur = db.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
@@ -159,6 +295,8 @@ def index():
     data_ate = request.args.get("data_ate", "")
     vendedor = request.args.get("vendedor", "")
     tour_filter = request.args.get("tour", "")
+    destino_filter = request.args.get("destino", "")
+    pais_filter = request.args.get("pais", "")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
@@ -183,6 +321,12 @@ def index():
     if tour_filter:
         conditions.append("v.tour LIKE ?")
         params.append(f"%{tour_filter}%")
+    if destino_filter:
+        conditions.append("v.destino = ?")
+        params.append(destino_filter)
+    if pais_filter:
+        conditions.append("v.pais = ?")
+        params.append(pais_filter)
 
     where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -203,9 +347,15 @@ def index():
     """
     rows = db.execute(data_sql, params + [per_page, offset]).fetchall()
 
-    # Get vendedores for filter dropdown
+    # Get vendedores and destinos for filter dropdowns
     vendedores = db.execute(
         "SELECT DISTINCT vendedor FROM vendas WHERE vendedor != '' ORDER BY vendedor"
+    ).fetchall()
+    destinos = db.execute(
+        "SELECT DISTINCT destino FROM vendas WHERE destino != '' ORDER BY destino"
+    ).fetchall()
+    paises = db.execute(
+        "SELECT DISTINCT pais FROM vendas WHERE pais != '' ORDER BY pais"
     ).fetchall()
 
     # Stats
@@ -226,7 +376,11 @@ def index():
         data_ate=data_ate,
         vendedor=vendedor,
         tour_filter=tour_filter,
+        destino_filter=destino_filter,
+        pais_filter=pais_filter,
         vendedores=vendedores,
+        destinos=destinos,
+        paises=paises,
         stats=stats,
         user=session
     )
@@ -253,6 +407,8 @@ def export_csv():
     data_de = request.args.get("data_de", "")
     data_ate = request.args.get("data_ate", "")
     vendedor = request.args.get("vendedor", "")
+    destino = request.args.get("destino", "")
+    pais = request.args.get("pais", "")
 
     conditions = []
     params = []
@@ -269,16 +425,22 @@ def export_csv():
     if vendedor:
         conditions.append("vendedor = ?")
         params.append(vendedor)
+    if destino:
+        conditions.append("destino = ?")
+        params.append(destino)
+    if pais:
+        conditions.append("pais = ?")
+        params.append(pais)
 
     where = " AND ".join(conditions) if conditions else "1=1"
     rows = db.execute(f"SELECT * FROM vendas WHERE {where} ORDER BY data DESC", params).fetchall()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Data", "Nome", "Tour", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente"])
+    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente"])
     for r in rows:
-        writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r["pax"],
-                         r["endereco"], r["depto"], r["telefone"], r["vendedor"],
+        writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r.get("pais", ""), r.get("destino", ""),
+                         r["pax"], r["endereco"], r["depto"], r["telefone"], r["vendedor"],
                          r["valor"], r["pendiente"]])
 
     return Response(
@@ -399,14 +561,17 @@ def import_data_from_upload(vendas, details):
         existing = db.execute("SELECT 1 FROM vendas WHERE ce_id = ?", (ce_id,)).fetchone()
         if existing:
             continue
+        tour_name = v.get("Tour", "")
+        destino = classify_destino(tour_name)
+        pais = get_pais(destino)
         db.execute("""
-            INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            ce_id, data, v.get("Nome", ""), v.get("Tour", ""),
+            ce_id, data, v.get("Nome", ""), tour_name,
             v.get("PAX", ""), v.get("Endereço", ""), v.get("Depto", ""),
             v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
-            v.get("Pendiente", ""), ano, mes
+            v.get("Pendiente", ""), ano, mes, destino, pais
         ))
 
         detail = details_map.get(ce_id, {})
@@ -451,14 +616,17 @@ def import_data_from_json():
         data = v.get("Data", "")
         ano = int(data[:4]) if len(data) >= 4 else 0
         mes = int(data[5:7]) if len(data) >= 7 else 0
+        tour_name = v.get("Tour", "")
+        destino = classify_destino(tour_name)
+        pais = get_pais(destino)
         db.execute("""
-            INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            v.get("ID", ""), data, v.get("Nome", ""), v.get("Tour", ""),
+            v.get("ID", ""), data, v.get("Nome", ""), tour_name,
             v.get("PAX", ""), v.get("Endereço", ""), v.get("Depto", ""),
             v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
-            v.get("Pendiente", ""), ano, mes
+            v.get("Pendiente", ""), ano, mes, destino, pais
         ))
 
         # Import observations and attachments
@@ -583,6 +751,8 @@ BASE_CSS = """
     .badge-obs { background: #1e3a5f; color: #38bdf8; }
     .badge-anexo { background: #3b1f2b; color: #f43f5e; }
     .badge-zero { background: #1e293b; color: #475569; }
+    .badge-destino { background: #1a2e1a; color: #4ade80; font-size: 0.75rem; }
+    .badge-pais { background: #2d1a3e; color: #c084fc; font-size: 0.75rem; }
 
     .pagination { display: flex; gap: 8px; justify-content: center; margin-top: 20px; align-items: center; }
     .pagination a, .pagination span {
@@ -707,6 +877,24 @@ INDEX_HTML = """<!DOCTYPE html>
                     </select>
                 </div>
                 <div>
+                    <label>País</label>
+                    <select name="pais">
+                        <option value="">Todos</option>
+                        {% for p in paises %}
+                        <option value="{{ p.pais }}" {% if p.pais == pais_filter %}selected{% endif %}>{{ p.pais }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label>Destino</label>
+                    <select name="destino">
+                        <option value="">Todos</option>
+                        {% for d in destinos %}
+                        <option value="{{ d.destino }}" {% if d.destino == destino_filter %}selected{% endif %}>{{ d.destino }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
                     <label>Tour</label>
                     <input type="text" name="tour" value="{{ tour_filter }}" placeholder="Tour..." style="width:160px">
                 </div>
@@ -717,7 +905,7 @@ INDEX_HTML = """<!DOCTYPE html>
                     <a href="{{ url_for('index') }}" class="btn btn-ghost">Limpar</a>
                 </div>
                 <div>
-                    <a href="{{ url_for('export_csv', q=q, data_de=data_de, data_ate=data_ate, vendedor=vendedor) }}" class="btn btn-success btn-sm">CSV</a>
+                    <a href="{{ url_for('export_csv', q=q, data_de=data_de, data_ate=data_ate, vendedor=vendedor, destino=destino_filter, pais=pais_filter) }}" class="btn btn-success btn-sm">CSV</a>
                 </div>
             </div>
         </form>
@@ -732,7 +920,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <table>
         <thead>
             <tr>
-                <th>ID</th><th>Data</th><th>Nome</th><th>Tour</th><th>PAX</th>
+                <th>ID</th><th>Data</th><th>Nome</th><th>Tour</th><th>País</th><th>Destino</th><th>PAX</th>
                 <th>Vendedor</th><th>Valor</th><th>Pend.</th><th>Obs</th><th>Anexos</th>
             </tr>
         </thead>
@@ -743,6 +931,8 @@ INDEX_HTML = """<!DOCTYPE html>
                 <td>{{ r.data }}</td>
                 <td>{{ r.nome[:35] }}{% if r.nome|length > 35 %}...{% endif %}</td>
                 <td>{{ r.tour[:30] }}{% if r.tour|length > 30 %}...{% endif %}</td>
+                <td><span class="badge badge-pais">{{ r.pais }}</span></td>
+                <td><span class="badge badge-destino">{{ r.destino }}</span></td>
                 <td>{{ r.pax }}</td>
                 <td>{{ r.vendedor }}</td>
                 <td>{{ r.valor }}</td>
@@ -752,7 +942,7 @@ INDEX_HTML = """<!DOCTYPE html>
             </tr>
         {% endfor %}
         {% if not rows %}
-            <tr><td colspan="10" style="text-align:center; padding:40px; color:#64748b;">Nenhum resultado encontrado.</td></tr>
+            <tr><td colspan="11" style="text-align:center; padding:40px; color:#64748b;">Nenhum resultado encontrado.</td></tr>
         {% endif %}
         </tbody>
     </table>
@@ -760,21 +950,21 @@ INDEX_HTML = """<!DOCTYPE html>
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&tour={{ tour_filter }}">← Anterior</a>
+        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">← Anterior</a>
         {% endif %}
 
         {% for p in range(1, total_pages+1) %}
             {% if p == page %}
                 <span class="active">{{ p }}</span>
             {% elif p <= 3 or p >= total_pages-2 or (p >= page-2 and p <= page+2) %}
-                <a href="?page={{ p }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&tour={{ tour_filter }}">{{ p }}</a>
+                <a href="?page={{ p }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">{{ p }}</a>
             {% elif p == 4 or p == total_pages-3 %}
                 <span class="info">...</span>
             {% endif %}
         {% endfor %}
 
         {% if page < total_pages %}
-        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&tour={{ tour_filter }}">Próxima →</a>
+        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">Próxima →</a>
         {% endif %}
         <span class="info">{{ total }} vendas · Página {{ page }}/{{ total_pages }}</span>
     </div>
@@ -800,6 +990,8 @@ DETAIL_HTML = """<!DOCTYPE html>
             <div class="detail-field"><div class="label">Data</div><div class="value">{{ venda.data }}</div></div>
             <div class="detail-field"><div class="label">Nome</div><div class="value">{{ venda.nome }}</div></div>
             <div class="detail-field"><div class="label">Tour</div><div class="value">{{ venda.tour }}</div></div>
+            <div class="detail-field"><div class="label">País</div><div class="value"><span class="badge badge-pais">{{ venda.pais }}</span></div></div>
+            <div class="detail-field"><div class="label">Destino</div><div class="value"><span class="badge badge-destino">{{ venda.destino }}</span></div></div>
             <div class="detail-field"><div class="label">PAX</div><div class="value">{{ venda.pax }}</div></div>
             <div class="detail-field"><div class="label">Endereço</div><div class="value">{{ venda.endereco }}</div></div>
             <div class="detail-field"><div class="label">Depto</div><div class="value">{{ venda.depto }}</div></div>
