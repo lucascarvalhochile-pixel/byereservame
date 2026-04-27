@@ -160,7 +160,16 @@ def init_db():
             password_hash TEXT NOT NULL,
             nome TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'viewer',
+            paises_acesso TEXT NOT NULL DEFAULT 'ALL',
+            pode_exportar INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS access_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            login_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            ip TEXT
         );
         CREATE TABLE IF NOT EXISTS vendas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,6 +220,16 @@ def init_db():
         db.execute("ALTER TABLE vendas ADD COLUMN pais TEXT DEFAULT ''")
         db.commit()
         print("Migration: added 'pais' column to vendas", flush=True)
+    # Migration: add paises_acesso and pode_exportar to users if missing
+    user_cols = [row[1] for row in db.execute("PRAGMA table_info(users)").fetchall()]
+    if "paises_acesso" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN paises_acesso TEXT NOT NULL DEFAULT 'ALL'")
+        db.commit()
+        print("Migration: added 'paises_acesso' column to users", flush=True)
+    if "pode_exportar" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN pode_exportar INTEGER NOT NULL DEFAULT 0")
+        db.commit()
+        print("Migration: added 'pode_exportar' column to users", flush=True)
     # Backfill/reclassify ALL vendas (destino + pais) on every startup
     # This ensures any corrections to classify_destino are applied
     all_rows = db.execute("SELECT id, tour FROM vendas").fetchall()
@@ -223,16 +242,22 @@ def init_db():
     if updated:
         db.commit()
         print(f"Backfill: classified {updated} vendas (destino + pais)", flush=True)
-    # Create default admin if no users exist
+    # Create default users if no users exist
     cur = db.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
-        pw_hash = hashlib.sha256("admin123".encode()).hexdigest()
-        db.execute(
-            "INSERT INTO users (username, password_hash, nome, role) VALUES (?, ?, ?, ?)",
-            ("admin", pw_hash, "Administrador", "admin")
-        )
+        default_users = [
+            ("admin", "admin123", "Administrador", "admin", "ALL", 1),
+            ("atendimento", "atend2026", "Atendimento", "viewer", "ALL", 0),
+            ("operacao", "oper2026", "Operação", "viewer", "ALL", 1),
+        ]
+        for u, pw, nome, role, paises, csv_ok in default_users:
+            pw_hash = hashlib.sha256(pw.encode()).hexdigest()
+            db.execute(
+                "INSERT INTO users (username, password_hash, nome, role, paises_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?)",
+                (u, pw_hash, nome, role, paises, csv_ok)
+            )
         db.commit()
-        print("Created default admin user (admin / admin123)", flush=True)
+        print("Created default users: admin, atendimento, operacao", flush=True)
     db.close()
 
 # ─── Auth ────────────────────────────────────────────────────────────────────
@@ -274,6 +299,14 @@ def login():
             session["username"] = user["username"]
             session["nome"] = user["nome"]
             session["role"] = user["role"]
+            session["paises_acesso"] = user["paises_acesso"] if "paises_acesso" in user.keys() else "ALL"
+            session["pode_exportar"] = user["pode_exportar"] if "pode_exportar" in user.keys() else 1
+            # Log access
+            db.execute(
+                "INSERT INTO access_log (user_id, username, ip) VALUES (?, ?, ?)",
+                (user["id"], user["username"], request.remote_addr)
+            )
+            db.commit()
             return redirect(url_for("index"))
         flash("Usuário ou senha incorretos.", "error")
     return render_template_string(LOGIN_HTML)
@@ -300,9 +333,21 @@ def index():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
+    # User's country access filter
+    user_paises = session.get("paises_acesso", "ALL")
+    allowed_paises = None
+    if user_paises != "ALL":
+        allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
+
     # Build query
     conditions = []
     params = []
+
+    # Restrict to allowed countries
+    if allowed_paises:
+        placeholders = ",".join("?" * len(allowed_paises))
+        conditions.append(f"v.pais IN ({placeholders})")
+        params.extend(allowed_paises)
 
     if q:
         conditions.append("(v.nome LIKE ? OR v.ce_id LIKE ? OR v.tour LIKE ? OR v.telefone LIKE ? OR v.endereco LIKE ?)")
@@ -402,6 +447,9 @@ def venda_detail(ce_id):
 @app.route("/export")
 @login_required
 def export_csv():
+    if not session.get("pode_exportar", 0):
+        flash("Você não tem permissão para exportar CSV.", "error")
+        return redirect(url_for("index"))
     db = get_db()
     q = request.args.get("q", "").strip()
     data_de = request.args.get("data_de", "")
@@ -410,8 +458,18 @@ def export_csv():
     destino = request.args.get("destino", "")
     pais = request.args.get("pais", "")
 
+    # Apply user country restriction
+    user_paises = session.get("paises_acesso", "ALL")
+    allowed_paises = None
+    if user_paises != "ALL":
+        allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
+
     conditions = []
     params = []
+    if allowed_paises:
+        placeholders = ",".join("?" * len(allowed_paises))
+        conditions.append(f"pais IN ({placeholders})")
+        params.extend(allowed_paises)
     if q:
         conditions.append("(nome LIKE ? OR ce_id LIKE ? OR tour LIKE ?)")
         like = f"%{q}%"
@@ -465,6 +523,8 @@ def admin_add_user():
     password = request.form.get("password", "")
     nome = request.form.get("nome", "").strip()
     role = request.form.get("role", "viewer")
+    paises_acesso = request.form.get("paises_acesso", "ALL").strip() or "ALL"
+    pode_exportar = 1 if request.form.get("pode_exportar") else 0
 
     if not username or not password or not nome:
         flash("Preencha todos os campos.", "error")
@@ -474,8 +534,8 @@ def admin_add_user():
     db = get_db()
     try:
         db.execute(
-            "INSERT INTO users (username, password_hash, nome, role) VALUES (?, ?, ?, ?)",
-            (username, pw_hash, nome, role)
+            "INSERT INTO users (username, password_hash, nome, role, paises_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?)",
+            (username, pw_hash, nome, role, paises_acesso, pode_exportar)
         )
         db.commit()
         flash(f"Usuário {username} criado.", "success")
@@ -491,6 +551,33 @@ def admin_delete_user(user_id):
     db.commit()
     flash("Usuário removido.", "success")
     return redirect(url_for("admin_users"))
+
+@app.route("/admin/users/edit/<int:user_id>", methods=["POST"])
+@admin_required
+def admin_edit_user(user_id):
+    db = get_db()
+    paises_acesso = request.form.get("paises_acesso", "ALL").strip() or "ALL"
+    pode_exportar = 1 if request.form.get("pode_exportar") else 0
+    new_password = request.form.get("new_password", "").strip()
+    if new_password:
+        pw_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        db.execute("UPDATE users SET paises_acesso = ?, pode_exportar = ?, password_hash = ? WHERE id = ?",
+                   (paises_acesso, pode_exportar, pw_hash, user_id))
+    else:
+        db.execute("UPDATE users SET paises_acesso = ?, pode_exportar = ? WHERE id = ?",
+                   (paises_acesso, pode_exportar, user_id))
+    db.commit()
+    flash("Usuário atualizado.", "success")
+    return redirect(url_for("admin_users"))
+
+@app.route("/admin/access-log")
+@admin_required
+def admin_access_log():
+    db = get_db()
+    logs = db.execute("""
+        SELECT * FROM access_log ORDER BY login_at DESC LIMIT 200
+    """).fetchall()
+    return render_template_string(ACCESS_LOG_HTML, logs=logs, user=session)
 
 @app.route("/admin/stats")
 @admin_required
@@ -842,6 +929,7 @@ INDEX_HTML = """<!DOCTYPE html>
         {% if user.role == 'admin' %}
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
         {% endif %}
     </nav>
@@ -904,9 +992,11 @@ INDEX_HTML = """<!DOCTYPE html>
                 <div>
                     <a href="{{ url_for('index') }}" class="btn btn-ghost">Limpar</a>
                 </div>
+                {% if user.pode_exportar %}
                 <div>
                     <a href="{{ url_for('export_csv', q=q, data_de=data_de, data_ate=data_ate, vendedor=vendedor, destino=destino_filter, pais=pais_filter) }}" class="btn btn-success btn-sm">CSV</a>
                 </div>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -1034,13 +1124,21 @@ DETAIL_HTML = """<!DOCTYPE html>
 
 ADMIN_USERS_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Usuários — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<title>Usuários — BYERESERVAME</title>""" + BASE_CSS + """
+<style>
+.inp{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-size:13px}
+.inp-sm{width:120px} .inp-md{width:180px}
+.edit-row td{background:#1e293b !important}
+label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
+</style>
+</head><body>
 <div class="navbar">
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}" style="color:#f8fafc">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
     <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
@@ -1053,35 +1151,58 @@ ADMIN_USERS_HTML = """<!DOCTYPE html>
     <div class="detail-card">
         <h3>Adicionar Usuário</h3>
         <form method="POST" action="{{ url_for('admin_add_user') }}" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-            <div><label>Usuário</label><input type="text" name="username" required style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;"></div>
-            <div><label>Senha</label><input type="text" name="password" required style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;"></div>
-            <div><label>Nome</label><input type="text" name="nome" required style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;"></div>
+            <div><label>Usuário</label><input type="text" name="username" required class="inp inp-sm"></div>
+            <div><label>Senha</label><input type="text" name="password" required class="inp inp-sm"></div>
+            <div><label>Nome</label><input type="text" name="nome" required class="inp inp-md"></div>
             <div><label>Papel</label>
-                <select name="role" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;">
+                <select name="role" class="inp">
                     <option value="viewer">Visualizador</option>
                     <option value="admin">Administrador</option>
                 </select>
+            </div>
+            <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="ALL" class="inp inp-md" placeholder="Chile,Argentina ou ALL"></div>
+            <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
+                <input type="checkbox" name="pode_exportar" id="add_csv" value="1">
+                <label for="add_csv" style="margin:0;color:#e2e8f0">Exportar CSV</label>
             </div>
             <button type="submit" class="btn btn-primary btn-sm">Criar</button>
         </form>
     </div>
 
     <table>
-        <thead><tr><th>ID</th><th>Usuário</th><th>Nome</th><th>Papel</th><th>Criado</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Usuário</th><th>Nome</th><th>Papel</th><th>Países</th><th>CSV</th><th>Criado</th><th>Ações</th></tr></thead>
         <tbody>
         {% for u in users %}
         <tr>
             <td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.nome }}</td>
             <td><span class="badge {% if u.role == 'admin' %}badge-anexo{% else %}badge-obs{% endif %}">{{ u.role }}</span></td>
-            <td>{{ u.created_at }}</td>
-            <td>
+            <td>{{ u.paises_acesso if u.paises_acesso else 'ALL' }}</td>
+            <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#f43f5e">Não</span>{% endif %}</td>
+            <td>{{ u.created_at[:10] if u.created_at else '' }}</td>
+            <td style="white-space:nowrap">
                 {% if u.id != user.user_id %}
+                <button class="btn btn-sm" onclick="document.getElementById('edit-{{u.id}}').style.display=document.getElementById('edit-{{u.id}}').style.display==='none'?'table-row':'none'" style="background:#334155;color:#e2e8f0;margin-right:4px">Editar</button>
                 <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline" onsubmit="return confirm('Remover {{ u.username }}?')">
                     <button type="submit" class="btn btn-danger btn-sm">Remover</button>
                 </form>
                 {% endif %}
             </td>
         </tr>
+        {% if u.id != user.user_id %}
+        <tr id="edit-{{u.id}}" class="edit-row" style="display:none">
+            <td colspan="8">
+                <form method="POST" action="{{ url_for('admin_edit_user', user_id=u.id) }}" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:8px 0">
+                    <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="{{ u.paises_acesso if u.paises_acesso else 'ALL' }}" class="inp inp-md"></div>
+                    <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
+                        <input type="checkbox" name="pode_exportar" value="1" {% if u.pode_exportar %}checked{% endif %}>
+                        <label style="margin:0;color:#e2e8f0">Exportar CSV</label>
+                    </div>
+                    <div><label>Nova senha (opcional)</label><input type="text" name="new_password" class="inp inp-sm" placeholder="deixe vazio"></div>
+                    <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+                </form>
+            </td>
+        </tr>
+        {% endif %}
         {% endfor %}
         </tbody>
     </table>
@@ -1097,6 +1218,7 @@ ADMIN_STATS_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('admin_stats') }}" style="color:#f8fafc">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
     <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
@@ -1143,6 +1265,7 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}" style="color:#f8fafc">Importar</a>
     </nav>
     <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
@@ -1181,6 +1304,43 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
             <input type="hidden" name="action" value="import_2026">
             <button type="submit" class="btn btn-primary" onclick="return confirm('Isso vai substituir todos os dados 2026. Continuar?')">Importar 2026 (local)</button>
         </form>
+    </div>
+</div>
+</body></html>"""
+
+ACCESS_LOG_HTML = """<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log de Acessos — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<div class="navbar">
+    <div class="brand">BYE<span>RESERVAME</span></div>
+    <nav>
+        <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}" style="color:#f8fafc">Acessos</a>
+        <a href="{{ url_for('admin_import') }}">Importar</a>
+    </nav>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+</div>
+<div class="container">
+    <div class="detail-card">
+        <h3>Últimos 200 Acessos</h3>
+        <table>
+            <thead><tr><th>#</th><th>Usuário</th><th>Data/Hora</th><th>IP</th></tr></thead>
+            <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.id }}</td>
+                <td>{{ log.username }}</td>
+                <td>{{ log.login_at }}</td>
+                <td>{{ log.ip or '—' }}</td>
+            </tr>
+            {% endfor %}
+            {% if not logs %}
+            <tr><td colspan="4" style="text-align:center;color:#64748b">Nenhum acesso registrado ainda.</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
     </div>
 </div>
 </body></html>"""
