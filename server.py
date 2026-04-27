@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Inclui obs/anexos no import. v2.1
 """
-BYERESERVAME â Sistema de consulta de vendas da LC Turismo
+BYERESERVAME — Sistema de consulta de vendas da LC Turismo
 Substitui o Reservame com busca textual, filtros combinados, sem limite de 100 rows.
 """
 
@@ -26,42 +26,42 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB max upload
 DB_PATH = os.environ.get("DB_PATH", "byereservame.db")
 ADMIN_SETUP_KEY = os.environ.get("ADMIN_SETUP_KEY", "lcturismo2026")
 
-# âââ Destination Classifier âââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Destination Classifier ─────────────────────────────────────────────────
 
 DESTINOS_VALIDOS = [
     "Santiago", "Atacama", "Uyuni", "Cusco", "Lima",
     "San Andres", "Cartagena", "Buenos Aires", "Bariloche",
-    "Mendoza", "Ushuaia", "El Calafate", "Punta Cana", "CancÃºn"
+    "Mendoza", "Ushuaia", "El Calafate", "Punta Cana", "Cancún"
 ]
 
 DESTINO_TO_PAIS = {
     "Santiago": "Chile", "Atacama": "Chile", "Uyuni": "Chile",
     "Torres del Paine": "Chile",
     "Cusco": "Peru", "Lima": "Peru",
-    "San Andres": "ColÃ´mbia", "Cartagena": "ColÃ´mbia",
+    "San Andres": "Colômbia", "Cartagena": "Colômbia",
     "Buenos Aires": "Argentina", "Bariloche": "Argentina",
     "Mendoza": "Argentina", "Ushuaia": "Argentina", "El Calafate": "Argentina",
-    "Punta Cana": "RepÃºblica Dominicana",
-    "CancÃºn": "MÃ©xico",
+    "Punta Cana": "República Dominicana",
+    "Cancún": "México",
 }
 
 def get_pais(destino):
-    """Retorna o paÃ­s a partir do destino (cidade)."""
+    """Retorna o país a partir do destino (cidade)."""
     return DESTINO_TO_PAIS.get(destino, "Chile")
 
 def classify_destino(tour):
-    """Classifica o destino (nÃ­vel cidade) a partir do nome do tour.
-    Regras validadas pelo Lucas em 27/04/2026 (55 correÃ§Ãµes aplicadas)."""
+    """Classifica o destino (nível cidade) a partir do nome do tour.
+    Regras validadas pelo Lucas em 27/04/2026 (55 correções aplicadas)."""
     t = (tour or "").strip()
     tl = t.lower()
 
-    # ââ Atacama / Uyuni (checar antes de Chile genÃ©rico) ââ
+    # ── Atacama / Uyuni (checar antes de Chile genérico) ──
     if "chi atma" in tl or "chiata" in tl or "atacama" in tl:
         return "Atacama"
     if "uyuni" in tl:
         return "Uyuni"
 
-    # ââ Peru (Cusco vs Lima) ââ
+    # ── Peru (Cusco vs Lima) ──
     if any(kw in tl for kw in ("cusco", "koricancha", "machu", "humantay", "sacred",
             "valle sagrado", "moray", "salineras", "rainbow", "7 cores",
             "montanha 7", "ausangate", "boleto tur", "titicaca")):
@@ -71,7 +71,7 @@ def classify_destino(tour):
             return "Lima"
         return "Cusco"
 
-    # ââ ColÃ´mbia (San AndrÃ©s vs Cartagena) ââ
+    # ── Colômbia (San Andrés vs Cartagena) ──
     if t.startswith(("Y Sai", "Yz Sai")):
         return "San Andres"
     if t.startswith(("Yz Ctg", "Y Col Ctg")):
@@ -81,7 +81,7 @@ def classify_destino(tour):
             return "San Andres"
         return "Cartagena"
 
-    # ââ Argentina (por cidade) â incluindo prefixo "Zz Arg" ââ
+    # ── Argentina (por cidade) — incluindo prefixo "Zz Arg" ──
     if t.startswith(("Z Arg", "Zz Arg")) or "buenos aires" in tl:
         if "brc" in tl or "bariloche" in tl:
             return "Bariloche"
@@ -101,15 +101,15 @@ def classify_destino(tour):
     if "calafate" in tl:
         return "El Calafate"
 
-    # ââ Rep. Dominicana ââ
+    # ── Rep. Dominicana ──
     if t.startswith("X Rd") or "punta cana" in tl or "saona" in tl or "bavaro" in tl:
         return "Punta Cana"
 
-    # ââ MÃ©xico ââ
+    # ── México ──
     if t.startswith("X Mex") or "cancun" in tl or "tulum" in tl or "chichen" in tl:
-        return "CancÃºn"
+        return "Cancún"
 
-    # ââ Chile / Santiago (default para Zz/Zzz/Zerando) ââ
+    # ── Chile / Santiago (default para Zz/Zzz/Zerando) ──
     # Checar sub-destinos Chile antes do fallback Santiago
     if t.startswith(("Zz", "Zzz")):
         # Zz Chi Atma = Atacama
@@ -136,7 +136,7 @@ def classify_destino(tour):
 
     return "Santiago"
 
-# âââ Database ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Database ────────────────────────────────────────────────────────────────
 
 def get_db():
     if "db" not in g:
@@ -249,7 +249,7 @@ def init_db():
         default_users = [
             ("admin", "admin123", "Administrador", "admin", "ALL", 1),
             ("atendimento", "atend2026", "Atendimento", "viewer", "ALL", 0),
-            ("operacao", "oper2026", "OperaÃ§Ã£o", "viewer", "ALL", 1),
+            ("operacao", "oper2026", "Operação", "viewer", "ALL", 1),
         ]
         for u, pw, nome, role, paises, csv_ok in default_users:
             pw_hash = hashlib.sha256(pw.encode()).hexdigest()
@@ -261,7 +261,7 @@ def init_db():
         print("Created default users: admin, atendimento, operacao", flush=True)
     db.close()
 
-# âââ Auth ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Auth ────────────────────────────────────────────────────────────────────
 
 def login_required(f):
     @wraps(f)
@@ -282,7 +282,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# âââ Routes: Auth ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Routes: Auth ────────────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -309,7 +309,7 @@ def login():
             )
             db.commit()
             return redirect(url_for("index"))
-        flash("UsuÃ¡rio ou senha incorretos.", "error")
+        flash("Usuário ou senha incorretos.", "error")
     return render_template_string(LOGIN_HTML)
 
 @app.route("/logout")
@@ -317,7 +317,7 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-# âââ Routes: Main âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Routes: Main ───────────────────────────────────────────────────────────
 
 @app.route("/")
 @login_required
@@ -437,7 +437,7 @@ def venda_detail(ce_id):
     db = get_db()
     venda = db.execute("SELECT * FROM vendas WHERE ce_id = ?", (ce_id,)).fetchone()
     if not venda:
-        flash("Venda nÃ£o encontrada.", "error")
+        flash("Venda não encontrada.", "error")
         return redirect(url_for("index"))
 
     obs = db.execute("SELECT obs FROM venda_obs WHERE ce_id = ? ORDER BY id", (ce_id,)).fetchall()
@@ -449,7 +449,7 @@ def venda_detail(ce_id):
 @login_required
 def export_csv():
     if not session.get("pode_exportar", 0):
-        flash("VocÃª nÃ£o tem permissÃ£o para exportar CSV.", "error")
+        flash("Você não tem permissão para exportar CSV.", "error")
         return redirect(url_for("index"))
     db = get_db()
     q = request.args.get("q", "").strip()
@@ -496,7 +496,7 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Data", "Nome", "Tour", "PaÃ­s", "Destino", "PAX", "EndereÃ§o", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente"])
+    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente"])
     for r in rows:
         writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r.get("pais", ""), r.get("destino", ""),
                          r["pax"], r["endereco"], r["depto"], r["telefone"], r["vendedor"],
@@ -508,7 +508,7 @@ def export_csv():
         headers={"Content-Disposition": f"attachment; filename=byereservame_export_{datetime.now().strftime('%Y%m%d')}.csv"}
     )
 
-# âââ Routes: Admin ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Routes: Admin ──────────────────────────────────────────────────────────
 
 @app.route("/admin/users")
 @admin_required
@@ -539,9 +539,9 @@ def admin_add_user():
             (username, pw_hash, nome, role, paises_acesso, pode_exportar)
         )
         db.commit()
-        flash(f"UsuÃ¡rio {username} criado.", "success")
+        flash(f"Usuário {username} criado.", "success")
     except sqlite3.IntegrityError:
-        flash(f"UsuÃ¡rio {username} jÃ¡ existe.", "error")
+        flash(f"Usuário {username} já existe.", "error")
     return redirect(url_for("admin_users"))
 
 @app.route("/admin/users/delete/<int:user_id>", methods=["POST"])
@@ -550,7 +550,7 @@ def admin_delete_user(user_id):
     db = get_db()
     db.execute("DELETE FROM users WHERE id = ? AND id != ?", (user_id, session["user_id"]))
     db.commit()
-    flash("UsuÃ¡rio removido.", "success")
+    flash("Usuário removido.", "success")
     return redirect(url_for("admin_users"))
 
 @app.route("/admin/users/edit/<int:user_id>", methods=["POST"])
@@ -568,7 +568,7 @@ def admin_edit_user(user_id):
         db.execute("UPDATE users SET paises_acesso = ?, pode_exportar = ? WHERE id = ?",
                    (paises_acesso, pode_exportar, user_id))
     db.commit()
-    flash("UsuÃ¡rio atualizado.", "success")
+    flash("Usuário atualizado.", "success")
     return redirect(url_for("admin_users"))
 
 @app.route("/admin/access-log")
@@ -605,7 +605,7 @@ def admin_stats():
         user=session
     )
 
-# âââ Data Import âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Data Import ─────────────────────────────────────────────────────────────
 
 @app.route("/admin/import", methods=["GET", "POST"])
 @admin_required
@@ -619,7 +619,7 @@ def admin_import():
             vendas_file = request.files.get("vendas_file")
             details_file = request.files.get("details_file")
             if not vendas_file:
-                flash("Arquivo de vendas Ã© obrigatÃ³rio.", "error")
+                flash("Arquivo de vendas é obrigatório.", "error")
             else:
                 try:
                     vendas = json.load(vendas_file)
@@ -664,22 +664,26 @@ def import_data_from_upload(vendas, details):
                 ano, mes, destino, pais, ce_id
             ))
             updated += 1
-            continue
-        db.execute("""
-            INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            ce_id, data, v.get("Nome", ""), tour_name,
-            v.get("PAX", ""), v.get("EndereÃ§o", ""), v.get("Depto", ""),
-            v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
-            v.get("Pendiente", ""), ano, mes, destino, pais
-        ))
+        else:
+            db.execute("""
+                INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ce_id, data, v.get("Nome", ""), tour_name,
+                v.get("PAX", ""), v.get("Endereço", ""), v.get("Depto", ""),
+                v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
+                v.get("Pendiente", ""), ano, mes, destino, pais
+            ))
 
+        # Process details (obs/anexos) for BOTH new and existing records
         detail = details_map.get(ce_id, {})
-        for obs in detail.get("observacoes", []):
-            db.execute("INSERT INTO venda_obs (ce_id, obs) VALUES (?, ?)", (ce_id, obs))
-        for url in detail.get("anexos", []):
-            db.execute("INSERT INTO venda_anexos (ce_id, url) VALUES (?, ?)", (ce_id, url))
+        if detail:
+            db.execute("DELETE FROM venda_obs WHERE ce_id = ?", (ce_id,))
+            db.execute("DELETE FROM venda_anexos WHERE ce_id = ?", (ce_id,))
+            for obs in detail.get("observacoes", []):
+                db.execute("INSERT INTO venda_obs (ce_id, obs) VALUES (?, ?)", (ce_id, obs))
+            for url in detail.get("anexos", []):
+                db.execute("INSERT INTO venda_anexos (ce_id, url) VALUES (?, ?)", (ce_id, url))
 
     db.commit()
     count_after = db.execute("SELECT COUNT(*) FROM vendas").fetchone()[0]
@@ -687,7 +691,7 @@ def import_data_from_upload(vendas, details):
     added = count_after - count_before
     obs_count = sum(len(d.get('observacoes', [])) for d in details_map.values())
     anx_count = sum(len(d.get('anexos', [])) for d in details_map.values())
-    return f"Importado: {added} novas, {updated} atualizadas (total: {count_after}), {obs_count} observaÃ§Ãµes, {anx_count} anexos"
+    return f"Importado: {added} novas, {updated} atualizadas (total: {count_after}), {obs_count} observações, {anx_count} anexos"
 
 def import_data_from_json():
     """Import 2026 data from bundled JSON files."""
@@ -695,7 +699,7 @@ def import_data_from_json():
     details_path = os.path.join(os.path.dirname(__file__), "data", "details_2026.json")
 
     if not os.path.exists(main_path):
-        return f"Arquivo nÃ£o encontrado: {main_path}"
+        return f"Arquivo não encontrado: {main_path}"
 
     with open(main_path, encoding="utf-8") as f:
         vendas = json.load(f)
@@ -725,7 +729,7 @@ def import_data_from_json():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             v.get("ID", ""), data, v.get("Nome", ""), tour_name,
-            v.get("PAX", ""), v.get("EndereÃ§o", ""), v.get("Depto", ""),
+            v.get("PAX", ""), v.get("Endereço", ""), v.get("Depto", ""),
             v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
             v.get("Pendiente", ""), ano, mes, destino, pais
         ))
@@ -740,9 +744,9 @@ def import_data_from_json():
 
     db.commit()
     db.close()
-    return f"Importado: {len(vendas)} vendas, {sum(len(d.get('observacoes',[])) for d in details_map.values())} observaÃ§Ãµes, {sum(len(d.get('anexos',[])) for d in details_map.values())} anexos"
+    return f"Importado: {len(vendas)} vendas, {sum(len(d.get('observacoes',[])) for d in details_map.values())} observações, {sum(len(d.get('anexos',[])) for d in details_map.values())} anexos"
 
-# âââ API ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── API ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/search")
 @login_required
@@ -787,7 +791,7 @@ def api_import():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# âââ HTML Templates âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── HTML Templates ─────────────────────────────────────────────────────────
 
 BASE_CSS = """
 <style>
@@ -916,16 +920,16 @@ BASE_CSS = """
 
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BYERESERVAME â Login</title>""" + BASE_CSS + """</head><body>
+<title>BYERESERVAME — Login</title>""" + BASE_CSS + """</head><body>
 <div class="login-container">
     <div class="login-box">
         <h1><span style="color:#38bdf8">BYE</span><span style="color:#f43f5e">RESERVAME</span></h1>
-        <div class="subtitle">LC Turismo â Sistema de Vendas</div>
+        <div class="subtitle">LC Turismo — Sistema de Vendas</div>
         {% for cat, msg in get_flashed_messages(with_categories=true) %}
         <div class="flash flash-{{ cat }}">{{ msg }}</div>
         {% endfor %}
         <form method="POST">
-            <input type="text" name="username" placeholder="UsuÃ¡rio" required autofocus>
+            <input type="text" name="username" placeholder="Usuário" required autofocus>
             <input type="password" name="password" placeholder="Senha" required>
             <button type="submit" class="btn btn-primary">Entrar</button>
         </form>
@@ -941,13 +945,13 @@ INDEX_HTML = """<!DOCTYPE html>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
         {% if user.role == 'admin' %}
-        <a href="{{ url_for('admin_stats') }}">EstatÃ­sticas</a>
-        <a href="{{ url_for('admin_users') }}">UsuÃ¡rios</a>
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
         {% endif %}
     </nav>
-    <div class="user-info">{{ user.nome }} Â· <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -966,7 +970,7 @@ INDEX_HTML = """<!DOCTYPE html>
                     <input type="date" name="data_de" value="{{ data_de }}">
                 </div>
                 <div>
-                    <label>AtÃ©</label>
+                    <label>Até</label>
                     <input type="date" name="data_ate" value="{{ data_ate }}">
                 </div>
                 <div>
@@ -979,7 +983,7 @@ INDEX_HTML = """<!DOCTYPE html>
                     </select>
                 </div>
                 <div>
-                    <label>PaÃ­s</label>
+                    <label>País</label>
                     <select name="pais">
                         <option value="">Todos</option>
                         {% for p in paises %}
@@ -1024,7 +1028,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <table>
         <thead>
             <tr>
-                <th>ID</th><th>Data</th><th>Nome</th><th>Tour</th><th>PaÃ­s</th><th>Destino</th><th>PAX</th>
+                <th>ID</th><th>Data</th><th>Nome</th><th>Tour</th><th>País</th><th>Destino</th><th>PAX</th>
                 <th>Vendedor</th><th>Valor</th><th>Pend.</th><th>Obs</th><th>Anexos</th>
             </tr>
         </thead>
@@ -1054,7 +1058,7 @@ INDEX_HTML = """<!DOCTYPE html>
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">â Anterior</a>
+        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">← Anterior</a>
         {% endif %}
 
         {% for p in range(1, total_pages+1) %}
@@ -1068,9 +1072,9 @@ INDEX_HTML = """<!DOCTYPE html>
         {% endfor %}
 
         {% if page < total_pages %}
-        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">PrÃ³xima â</a>
+        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">Próxima →</a>
         {% endif %}
-        <span class="info">{{ total }} vendas Â· PÃ¡gina {{ page }}/{{ total_pages }}</span>
+        <span class="info">{{ total }} vendas · Página {{ page }}/{{ total_pages }}</span>
     </div>
     {% endif %}
 </div>
@@ -1078,11 +1082,11 @@ INDEX_HTML = """<!DOCTYPE html>
 
 DETAIL_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ venda.ce_id }} â BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<title>{{ venda.ce_id }} — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
 <div class="navbar">
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
-        <a href="{{ url_for('index') }}">â Voltar</a>
+        <a href="{{ url_for('index') }}">← Voltar</a>
     </nav>
     <div class="user-info">{{ user.nome }}</div>
 </div>
@@ -1094,10 +1098,10 @@ DETAIL_HTML = """<!DOCTYPE html>
             <div class="detail-field"><div class="label">Data</div><div class="value">{{ venda.data }}</div></div>
             <div class="detail-field"><div class="label">Nome</div><div class="value">{{ venda.nome }}</div></div>
             <div class="detail-field"><div class="label">Tour</div><div class="value">{{ venda.tour }}</div></div>
-            <div class="detail-field"><div class="label">PaÃ­s</div><div class="value"><span class="badge badge-pais">{{ venda.pais }}</span></div></div>
+            <div class="detail-field"><div class="label">País</div><div class="value"><span class="badge badge-pais">{{ venda.pais }}</span></div></div>
             <div class="detail-field"><div class="label">Destino</div><div class="value"><span class="badge badge-destino">{{ venda.destino }}</span></div></div>
             <div class="detail-field"><div class="label">PAX</div><div class="value">{{ venda.pax }}</div></div>
-            <div class="detail-field"><div class="label">EndereÃ§o</div><div class="value">{{ venda.endereco }}</div></div>
+            <div class="detail-field"><div class="label">Endereço</div><div class="value">{{ venda.endereco }}</div></div>
             <div class="detail-field"><div class="label">Depto</div><div class="value">{{ venda.depto }}</div></div>
             <div class="detail-field"><div class="label">Telefone</div><div class="value">{{ venda.telefone }}</div></div>
             <div class="detail-field"><div class="label">Vendedor</div><div class="value">{{ venda.vendedor }}</div></div>
@@ -1107,7 +1111,7 @@ DETAIL_HTML = """<!DOCTYPE html>
     </div>
 
     <div class="detail-card">
-        <h3>ObservaÃ§Ãµes ({{ obs|length }})</h3>
+        <h3>Observações ({{ obs|length }})</h3>
         {% if obs %}
         <ul class="obs-list">
             {% for o in obs %}
@@ -1115,7 +1119,7 @@ DETAIL_HTML = """<!DOCTYPE html>
             {% endfor %}
         </ul>
         {% else %}
-        <p style="color:#64748b">Nenhuma observaÃ§Ã£o registrada.</p>
+        <p style="color:#64748b">Nenhuma observação registrada.</p>
         {% endif %}
     </div>
 
@@ -1138,7 +1142,7 @@ DETAIL_HTML = """<!DOCTYPE html>
 
 ADMIN_USERS_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UsuÃ¡rios â BYERESERVAME</title>""" + BASE_CSS + """
+<title>Usuários — BYERESERVAME</title>""" + BASE_CSS + """
 <style>
 .inp{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-size:13px}
 .inp-sm{width:120px} .inp-md{width:180px}
@@ -1150,12 +1154,12 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
-        <a href="{{ url_for('admin_stats') }}">EstatÃ­sticas</a>
-        <a href="{{ url_for('admin_users') }}" style="color:#f8fafc">UsuÃ¡rios</a>
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}" style="color:#f8fafc">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} Â· <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -1163,9 +1167,9 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     {% endfor %}
 
     <div class="detail-card">
-        <h3>Adicionar UsuÃ¡rio</h3>
+        <h3>Adicionar Usuário</h3>
         <form method="POST" action="{{ url_for('admin_add_user') }}" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-            <div><label>UsuÃ¡rio</label><input type="text" name="username" required class="inp inp-sm"></div>
+            <div><label>Usuário</label><input type="text" name="username" required class="inp inp-sm"></div>
             <div><label>Senha</label><input type="text" name="password" required class="inp inp-sm"></div>
             <div><label>Nome</label><input type="text" name="nome" required class="inp inp-md"></div>
             <div><label>Papel</label>
@@ -1174,7 +1178,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
                     <option value="admin">Administrador</option>
                 </select>
             </div>
-            <div><label>PaÃ­ses (ou ALL)</label><input type="text" name="paises_acesso" value="ALL" class="inp inp-md" placeholder="Chile,Argentina ou ALL"></div>
+            <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="ALL" class="inp inp-md" placeholder="Chile,Argentina ou ALL"></div>
             <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
                 <input type="checkbox" name="pode_exportar" id="add_csv" value="1">
                 <label for="add_csv" style="margin:0;color:#e2e8f0">Exportar CSV</label>
@@ -1184,14 +1188,14 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     </div>
 
     <table>
-        <thead><tr><th>ID</th><th>UsuÃ¡rio</th><th>Nome</th><th>Papel</th><th>PaÃ­ses</th><th>CSV</th><th>Criado</th><th>AÃ§Ãµes</th></tr></thead>
+        <thead><tr><th>ID</th><th>Usuário</th><th>Nome</th><th>Papel</th><th>Países</th><th>CSV</th><th>Criado</th><th>Ações</th></tr></thead>
         <tbody>
         {% for u in users %}
         <tr>
             <td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.nome }}</td>
             <td><span class="badge {% if u.role == 'admin' %}badge-anexo{% else %}badge-obs{% endif %}">{{ u.role }}</span></td>
             <td>{{ u.paises_acesso if u.paises_acesso else 'ALL' }}</td>
-            <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#f43f5e">NÃ£o</span>{% endif %}</td>
+            <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#f43f5e">Não</span>{% endif %}</td>
             <td>{{ u.created_at[:10] if u.created_at else '' }}</td>
             <td style="white-space:nowrap">
                 {% if u.id != user.user_id %}
@@ -1206,7 +1210,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
         <tr id="edit-{{u.id}}" class="edit-row" style="display:none">
             <td colspan="8">
                 <form method="POST" action="{{ url_for('admin_edit_user', user_id=u.id) }}" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:8px 0">
-                    <div><label>PaÃ­ses (ou ALL)</label><input type="text" name="paises_acesso" value="{{ u.paises_acesso if u.paises_acesso else 'ALL' }}" class="inp inp-md"></div>
+                    <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="{{ u.paises_acesso if u.paises_acesso else 'ALL' }}" class="inp inp-md"></div>
                     <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
                         <input type="checkbox" name="pode_exportar" value="1" {% if u.pode_exportar %}checked{% endif %}>
                         <label style="margin:0;color:#e2e8f0">Exportar CSV</label>
@@ -1225,29 +1229,29 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
 
 ADMIN_STATS_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EstatÃ­sticas â BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<title>Estatísticas — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
 <div class="navbar">
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
-        <a href="{{ url_for('admin_stats') }}" style="color:#f8fafc">EstatÃ­sticas</a>
-        <a href="{{ url_for('admin_users') }}">UsuÃ¡rios</a>
+        <a href="{{ url_for('admin_stats') }}" style="color:#f8fafc">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} Â· <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
 </div>
 <div class="container">
     <div class="stats-bar">
         <div class="stat-card"><div class="num">{{ "{:,}".format(total_vendas).replace(",",".") }}</div><div class="label">Total Vendas</div></div>
-        <div class="stat-card"><div class="num">{{ "{:,}".format(total_obs).replace(",",".") }}</div><div class="label">ObservaÃ§Ãµes</div></div>
+        <div class="stat-card"><div class="num">{{ "{:,}".format(total_obs).replace(",",".") }}</div><div class="label">Observações</div></div>
         <div class="stat-card"><div class="num">{{ "{:,}".format(total_anexos).replace(",",".") }}</div><div class="label">Anexos</div></div>
     </div>
 
     <div class="detail-card">
-        <h3>Vendas por MÃªs</h3>
+        <h3>Vendas por Mês</h3>
         <table>
-            <thead><tr><th>Ano</th><th>MÃªs</th><th>Vendas</th><th>Vendedores</th></tr></thead>
+            <thead><tr><th>Ano</th><th>Mês</th><th>Vendas</th><th>Vendedores</th></tr></thead>
             <tbody>
             {% for m in by_month %}
             <tr><td>{{ m.ano }}</td><td>{{ m.mes }}</td><td>{{ m.qtd }}</td><td>{{ m.vendedores }}</td></tr>
@@ -1272,17 +1276,17 @@ ADMIN_STATS_HTML = """<!DOCTYPE html>
 
 ADMIN_IMPORT_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Importar â BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<title>Importar — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
 <div class="navbar">
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
-        <a href="{{ url_for('admin_stats') }}">EstatÃ­sticas</a>
-        <a href="{{ url_for('admin_users') }}">UsuÃ¡rios</a>
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}" style="color:#f8fafc">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} Â· <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -1296,15 +1300,15 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
 
     <div class="detail-card">
         <h3>Importar Dados (Upload JSON)</h3>
-        <p style="color:#94a3b8; margin-bottom:16px">FaÃ§a upload dos arquivos JSON exportados do sistema. O arquivo de vendas Ã© obrigatÃ³rio; o de detalhes (obs/anexos) Ã© opcional.</p>
+        <p style="color:#94a3b8; margin-bottom:16px">Faça upload dos arquivos JSON exportados do sistema. O arquivo de vendas é obrigatório; o de detalhes (obs/anexos) é opcional.</p>
         <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="action" value="upload_json">
             <div style="margin-bottom:12px">
-                <label style="color:#e2e8f0; display:block; margin-bottom:4px">vendas_XXXX.json (obrigatÃ³rio)</label>
+                <label style="color:#e2e8f0; display:block; margin-bottom:4px">vendas_XXXX.json (obrigatório)</label>
                 <input type="file" name="vendas_file" accept=".json" required style="color:#e2e8f0">
             </div>
             <div style="margin-bottom:12px">
-                <label style="color:#e2e8f0; display:block; margin-bottom:4px">details_XXXX.json (opcional â obs e anexos)</label>
+                <label style="color:#e2e8f0; display:block; margin-bottom:4px">details_XXXX.json (opcional — obs e anexos)</label>
                 <input type="file" name="details_file" accept=".json" style="color:#e2e8f0">
             </div>
             <button type="submit" class="btn btn-primary" onclick="return confirm('Isso vai ADICIONAR os dados ao banco. Continuar?')">Importar</button>
@@ -1324,30 +1328,30 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
 
 ACCESS_LOG_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Log de Acessos â BYERESERVAME</title>""" + BASE_CSS + """</head><body>
+<title>Log de Acessos — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
 <div class="navbar">
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
-        <a href="{{ url_for('admin_stats') }}">EstatÃ­sticas</a>
-        <a href="{{ url_for('admin_users') }}">UsuÃ¡rios</a>
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}" style="color:#f8fafc">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} Â· <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
 </div>
 <div class="container">
     <div class="detail-card">
-        <h3>Ãltimos 200 Acessos</h3>
+        <h3>Últimos 200 Acessos</h3>
         <table>
-            <thead><tr><th>#</th><th>UsuÃ¡rio</th><th>Data/Hora</th><th>IP</th></tr></thead>
+            <thead><tr><th>#</th><th>Usuário</th><th>Data/Hora</th><th>IP</th></tr></thead>
             <tbody>
             {% for log in logs %}
             <tr>
                 <td>{{ log.id }}</td>
                 <td>{{ log.username }}</td>
                 <td>{{ log.login_at }}</td>
-                <td>{{ log.ip or 'â' }}</td>
+                <td>{{ log.ip or '—' }}</td>
             </tr>
             {% endfor %}
             {% if not logs %}
@@ -1359,7 +1363,7 @@ ACCESS_LOG_HTML = """<!DOCTYPE html>
 </div>
 </body></html>"""
 
-# âââ Init âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─── Init ───────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     init_db()
