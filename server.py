@@ -162,6 +162,7 @@ def init_db():
             nome TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'viewer',
             paises_acesso TEXT NOT NULL DEFAULT 'ALL',
+            vendedores_acesso TEXT NOT NULL DEFAULT 'ALL',
             pode_exportar INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -227,6 +228,10 @@ def init_db():
         db.execute("ALTER TABLE users ADD COLUMN paises_acesso TEXT NOT NULL DEFAULT 'ALL'")
         db.commit()
         print("Migration: added 'paises_acesso' column to users", flush=True)
+    if "vendedores_acesso" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN vendedores_acesso TEXT NOT NULL DEFAULT 'ALL'")
+        db.commit()
+        print("Migration: added 'vendedores_acesso' column to users", flush=True)
     if "pode_exportar" not in user_cols:
         db.execute("ALTER TABLE users ADD COLUMN pode_exportar INTEGER NOT NULL DEFAULT 0")
         db.commit()
@@ -247,15 +252,16 @@ def init_db():
     cur = db.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         default_users = [
-            ("admin", "admin123", "Administrador", "admin", "ALL", 1),
-            ("atendimento", "atend2026", "Atendimento", "viewer", "ALL", 0),
-            ("operacao", "oper2026", "Operação", "viewer", "ALL", 1),
+            ("admin", "admin123", "Administrador", "admin", "ALL", "ALL", 1),
+            ("atendimento", "atend2026", "Atendimento", "viewer", "ALL", "ALL", 0),
+            ("operacao", "oper2026", "Operação", "viewer", "ALL", "ALL", 1),
+            ("yacana", "yacana2026", "Yacana Passeios", "viewer", "ALL", "felipegonzalezyacana,flaviasoaresyacana,jalvesyacanalc,mchavesposyacana,yfernandesyacanalc", 1),
         ]
-        for u, pw, nome, role, paises, csv_ok in default_users:
+        for u, pw, nome, role, paises, vendedores, csv_ok in default_users:
             pw_hash = hashlib.sha256(pw.encode()).hexdigest()
             db.execute(
-                "INSERT INTO users (username, password_hash, nome, role, paises_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?)",
-                (u, pw_hash, nome, role, paises, csv_ok)
+                "INSERT INTO users (username, password_hash, nome, role, paises_acesso, vendedores_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (u, pw_hash, nome, role, paises, vendedores, csv_ok)
             )
         db.commit()
         print("Created default users: admin, atendimento, operacao", flush=True)
@@ -301,6 +307,7 @@ def login():
             session["nome"] = user["nome"]
             session["role"] = user["role"]
             session["paises_acesso"] = user["paises_acesso"] if "paises_acesso" in user.keys() else "ALL"
+            session["vendedores_acesso"] = user["vendedores_acesso"] if "vendedores_acesso" in user.keys() else "ALL"
             session["pode_exportar"] = user["pode_exportar"] if "pode_exportar" in user.keys() else 1
             # Log access
             db.execute(
@@ -340,6 +347,12 @@ def index():
     if user_paises != "ALL":
         allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
 
+    # User's vendor access filter
+    user_vendedores = session.get("vendedores_acesso", "ALL")
+    allowed_vendedores = None
+    if user_vendedores != "ALL":
+        allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+
     # Build query
     conditions = []
     params = []
@@ -349,6 +362,12 @@ def index():
         placeholders = ",".join("?" * len(allowed_paises))
         conditions.append(f"v.pais IN ({placeholders})")
         params.extend(allowed_paises)
+
+    # Restrict to allowed vendors
+    if allowed_vendedores:
+        placeholders = ",".join("?" * len(allowed_vendedores))
+        conditions.append(f"v.vendedor IN ({placeholders})")
+        params.extend(allowed_vendedores)
 
     if q:
         conditions.append("(v.nome LIKE ? OR v.ce_id LIKE ? OR v.tour LIKE ? OR v.telefone LIKE ? OR v.endereco LIKE ?)")
@@ -465,12 +484,22 @@ def export_csv():
     if user_paises != "ALL":
         allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
 
+    # Apply user vendor restriction
+    user_vendedores = session.get("vendedores_acesso", "ALL")
+    allowed_vendedores = None
+    if user_vendedores != "ALL":
+        allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+
     conditions = []
     params = []
     if allowed_paises:
         placeholders = ",".join("?" * len(allowed_paises))
         conditions.append(f"pais IN ({placeholders})")
         params.extend(allowed_paises)
+    if allowed_vendedores:
+        placeholders = ",".join("?" * len(allowed_vendedores))
+        conditions.append(f"vendedor IN ({placeholders})")
+        params.extend(allowed_vendedores)
     if q:
         conditions.append("(nome LIKE ? OR ce_id LIKE ? OR tour LIKE ?)")
         like = f"%{q}%"
@@ -525,6 +554,7 @@ def admin_add_user():
     nome = request.form.get("nome", "").strip()
     role = request.form.get("role", "viewer")
     paises_acesso = request.form.get("paises_acesso", "ALL").strip() or "ALL"
+    vendedores_acesso = request.form.get("vendedores_acesso", "ALL").strip() or "ALL"
     pode_exportar = 1 if request.form.get("pode_exportar") else 0
 
     if not username or not password or not nome:
@@ -535,8 +565,8 @@ def admin_add_user():
     db = get_db()
     try:
         db.execute(
-            "INSERT INTO users (username, password_hash, nome, role, paises_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?)",
-            (username, pw_hash, nome, role, paises_acesso, pode_exportar)
+            "INSERT INTO users (username, password_hash, nome, role, paises_acesso, vendedores_acesso, pode_exportar) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (username, pw_hash, nome, role, paises_acesso, vendedores_acesso, pode_exportar)
         )
         db.commit()
         flash(f"Usuário {username} criado.", "success")
@@ -558,15 +588,16 @@ def admin_delete_user(user_id):
 def admin_edit_user(user_id):
     db = get_db()
     paises_acesso = request.form.get("paises_acesso", "ALL").strip() or "ALL"
+    vendedores_acesso = request.form.get("vendedores_acesso", "ALL").strip() or "ALL"
     pode_exportar = 1 if request.form.get("pode_exportar") else 0
     new_password = request.form.get("new_password", "").strip()
     if new_password:
         pw_hash = hashlib.sha256(new_password.encode()).hexdigest()
-        db.execute("UPDATE users SET paises_acesso = ?, pode_exportar = ?, password_hash = ? WHERE id = ?",
-                   (paises_acesso, pode_exportar, pw_hash, user_id))
+        db.execute("UPDATE users SET paises_acesso = ?, vendedores_acesso = ?, pode_exportar = ?, password_hash = ? WHERE id = ?",
+                   (paises_acesso, vendedores_acesso, pode_exportar, pw_hash, user_id))
     else:
-        db.execute("UPDATE users SET paises_acesso = ?, pode_exportar = ? WHERE id = ?",
-                   (paises_acesso, pode_exportar, user_id))
+        db.execute("UPDATE users SET paises_acesso = ?, vendedores_acesso = ?, pode_exportar = ? WHERE id = ?",
+                   (paises_acesso, vendedores_acesso, pode_exportar, user_id))
     db.commit()
     flash("Usuário atualizado.", "success")
     return redirect(url_for("admin_users"))
@@ -1179,6 +1210,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
                 </select>
             </div>
             <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="ALL" class="inp inp-md" placeholder="Chile,Argentina ou ALL"></div>
+            <div><label>Vendedores (ou ALL)</label><input type="text" name="vendedores_acesso" value="ALL" class="inp inp-md" placeholder="usuario1,usuario2 ou ALL"></div>
             <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
                 <input type="checkbox" name="pode_exportar" id="add_csv" value="1">
                 <label for="add_csv" style="margin:0;color:#e2e8f0">Exportar CSV</label>
@@ -1188,13 +1220,14 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     </div>
 
     <table>
-        <thead><tr><th>ID</th><th>Usuário</th><th>Nome</th><th>Papel</th><th>Países</th><th>CSV</th><th>Criado</th><th>Ações</th></tr></thead>
+        <thead><tr><th>ID</th><th>Usuário</th><th>Nome</th><th>Papel</th><th>Países</th><th>Vendedores</th><th>CSV</th><th>Criado</th><th>Ações</th></tr></thead>
         <tbody>
         {% for u in users %}
         <tr>
             <td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.nome }}</td>
             <td><span class="badge {% if u.role == 'admin' %}badge-anexo{% else %}badge-obs{% endif %}">{{ u.role }}</span></td>
             <td>{{ u.paises_acesso if u.paises_acesso else 'ALL' }}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ u.vendedores_acesso if u.vendedores_acesso else 'ALL' }}">{{ u.vendedores_acesso if u.vendedores_acesso else 'ALL' }}</td>
             <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#f43f5e">Não</span>{% endif %}</td>
             <td>{{ u.created_at[:10] if u.created_at else '' }}</td>
             <td style="white-space:nowrap">
@@ -1208,9 +1241,10 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
         </tr>
         {% if u.id != user.user_id %}
         <tr id="edit-{{u.id}}" class="edit-row" style="display:none">
-            <td colspan="8">
+            <td colspan="9">
                 <form method="POST" action="{{ url_for('admin_edit_user', user_id=u.id) }}" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:8px 0">
                     <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="{{ u.paises_acesso if u.paises_acesso else 'ALL' }}" class="inp inp-md"></div>
+                    <div><label>Vendedores (ou ALL)</label><input type="text" name="vendedores_acesso" value="{{ u.vendedores_acesso if u.vendedores_acesso else 'ALL' }}" class="inp inp-md"></div>
                     <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
                         <input type="checkbox" name="pode_exportar" value="1" {% if u.pode_exportar %}checked{% endif %}>
                         <label style="margin:0;color:#e2e8f0">Exportar CSV</label>
@@ -1370,3 +1404,8 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
 else:
     init_db()
+
+ Claude is active in this tab group  
+Open chat
+ 
+Dismiss
