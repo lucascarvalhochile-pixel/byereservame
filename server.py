@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-Inclui obs/anexos no import. v2.1
+# Inclui obs/anexos no import. v2.1
 """
 BYERESERVAME â Sistema de consulta de vendas da LC Turismo
 Substitui o Reservame com busca textual, filtros combinados, sem limite de 100 rows.
