@@ -552,9 +552,11 @@ def _do_export_csv():
     for r in rows:
         obs_rows = db.execute("SELECT obs FROM venda_obs WHERE ce_id = ?", (r["ce_id"],)).fetchall()
         obs_text = " | ".join(o["obs"] for o in obs_rows if o["obs"]) if obs_rows else ""
-        writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r.get("pais", ""), r.get("destino", ""),
-                         r["pax"], r["endereco"], r["depto"], r["telefone"], r["vendedor"],
-                         r["valor"], r["pendiente"], obs_text])
+        rd = dict(r)
+        writer.writerow([rd.get("ce_id",""), rd.get("data",""), rd.get("nome",""), rd.get("tour",""),
+                         rd.get("pais",""), rd.get("destino",""), rd.get("pax",""), rd.get("endereco",""),
+                         rd.get("depto",""), rd.get("telefone",""), rd.get("vendedor",""),
+                         rd.get("valor",""), rd.get("pendiente",""), obs_text])
 
     return Response(
         output.getvalue().encode('utf-8'),
