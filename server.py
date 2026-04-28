@@ -1251,20 +1251,22 @@ DETAIL_HTML = """<!DOCTYPE html>
         {% if anexos %}
         <div class="anexo-grid">
             {% for a in anexos %}
-            {% set fname = a.url.split('/')[-1] %}
+            {% set raw_url = a.url %}
+            {% set full_url = raw_url if raw_url.startswith('http') else 'https://zerandoochile.reservame.cl/' ~ raw_url %}
+            {% set fname = raw_url.split('/')[-1] %}
             {% set is_img = fname.lower().endswith(('.jpeg','.jpg','.png','.gif','.webp')) %}
             <div class="anexo-item">
                 {% if is_img %}
-                <img class="anexo-thumb" src="{{ a.url }}" alt="{{ fname }}" loading="lazy" onclick="openModal(this.src)">
+                <img class="anexo-thumb" src="{{ full_url }}" alt="{{ fname }}" loading="lazy" onclick="openModal(this.src)">
                 {% else %}
-                <a href="{{ a.url }}" target="_blank">
+                <a href="{{ full_url }}" target="_blank">
                     <div class="anexo-pdf-box">
                         <div class="anexo-pdf-icon">&#128196;</div>
                         <div class="anexo-pdf-label">PDF</div>
                     </div>
                 </a>
                 {% endif %}
-                <div class="anexo-name"><a href="{{ a.url }}" target="_blank">{{ fname }}</a></div>
+                <div class="anexo-name"><a href="{{ full_url }}" target="_blank">{{ fname }}</a></div>
             </div>
             {% endfor %}
         </div>
