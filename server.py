@@ -482,6 +482,13 @@ def venda_detail(ce_id):
 @app.route("/export")
 @login_required
 def export_csv():
+    try:
+        return _do_export_csv()
+    except Exception as e:
+        import traceback
+        return f"<pre>ERRO CSV: {e}\n\n{traceback.format_exc()}</pre>", 500
+
+def _do_export_csv():
     if not session.get("pode_exportar", 0):
         flash("Você não tem permissão para exportar CSV.", "error")
         return redirect(url_for("index"))
