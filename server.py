@@ -827,9 +827,10 @@ def api_import():
 
 @app.route("/api/enrich", methods=["POST"])
 def api_enrich():
-    """Enrich existing vendas with endereco, valor, depto, pendiente from Confirmar spreadsheet.
+    """Enrich existing vendas with endereco, valor, depto, pendiente, obs, anexos.
     Accepts JSON body: list of objects with ID + fields to update.
     Only updates fields that are non-empty in the payload. Does NOT create new records.
+    Obs and anexos are APPENDED (not replaced) to allow incremental enrichment.
     Auth: requires key query param."""
     api_key = os.environ.get("ADMIN_API_KEY", "byereservame2026")
     provided = request.args.get("key", "")
@@ -844,6 +845,8 @@ def api_enrich():
         db = sqlite3.connect(DB_PATH)
         updated = 0
         not_found = 0
+        obs_added = 0
+        anexos_added = 0
         for item in data:
             ce_id = item.get("ID", "").strip()
             if not ce_id:
@@ -866,12 +869,35 @@ def api_enrich():
                 db.execute(f"UPDATE vendas SET {', '.join(sets)} WHERE ce_id = ?", vals)
                 updated += 1
 
+            # Append obs (don't delete existing)
+            for obs_text in item.get("observacoes", []):
+                if obs_text and str(obs_text).strip():
+                    # Avoid duplicates
+                    dup = db.execute("SELECT 1 FROM venda_obs WHERE ce_id = ? AND obs = ?",
+                                    (ce_id, str(obs_text).strip())).fetchone()
+                    if not dup:
+                        db.execute("INSERT INTO venda_obs (ce_id, obs) VALUES (?, ?)",
+                                   (ce_id, str(obs_text).strip()))
+                        obs_added += 1
+
+            # Append anexos (don't delete existing)
+            for url in item.get("anexos", []):
+                if url and str(url).strip():
+                    dup = db.execute("SELECT 1 FROM venda_anexos WHERE ce_id = ? AND url = ?",
+                                    (ce_id, str(url).strip())).fetchone()
+                    if not dup:
+                        db.execute("INSERT INTO venda_anexos (ce_id, url) VALUES (?, ?)",
+                                   (ce_id, str(url).strip()))
+                        anexos_added += 1
+
         db.commit()
         db.close()
         return jsonify({
             "ok": True,
             "updated": updated,
             "not_found": not_found,
+            "obs_added": obs_added,
+            "anexos_added": anexos_added,
             "total_sent": len(data)
         })
     except Exception as e:
