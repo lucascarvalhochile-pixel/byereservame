@@ -538,23 +538,19 @@ def export_csv():
     where = " AND ".join(conditions) if conditions else "1=1"
     rows = db.execute(f"SELECT * FROM vendas WHERE {where} ORDER BY data DESC", params).fetchall()
 
-    output = io.BytesIO()
-    output.write(b'\xef\xbb\xbf')  # UTF-8 BOM for Excel
-    wrapper = io.TextIOWrapper(output, encoding='utf-8', newline='')
-    writer = csv.writer(wrapper, delimiter=';')
+    output = io.StringIO()
+    output.write('﻿')  # UTF-8 BOM for Excel
+    writer = csv.writer(output, delimiter=';')
     writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente", "Observações"])
     for r in rows:
-        # Fetch obs
-        obs_rows = db.execute("SELECT obs FROM detalhes WHERE venda_id = ?", (r["id"],)).fetchall()
+        obs_rows = db.execute("SELECT obs FROM venda_obs WHERE ce_id = ?", (r["ce_id"],)).fetchall()
         obs_text = " | ".join(o["obs"] for o in obs_rows if o["obs"]) if obs_rows else ""
         writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r.get("pais", ""), r.get("destino", ""),
                          r["pax"], r["endereco"], r["depto"], r["telefone"], r["vendedor"],
                          r["valor"], r["pendiente"], obs_text])
-    wrapper.flush()
-    wrapper.detach()
 
     return Response(
-        output.getvalue(),
+        output.getvalue().encode('utf-8'),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename=byereservame_export_{datetime.now().strftime('%Y%m%d')}.csv"}
     )
@@ -568,13 +564,27 @@ def api_export_all():
         return jsonify({"error": "unauthorized"}), 401
     db = get_db()
     vendas = db.execute("SELECT * FROM vendas ORDER BY data DESC").fetchall()
-    detalhes = db.execute("SELECT * FROM detalhes ORDER BY id").fetchall()
+    obs_rows = db.execute("SELECT ce_id, obs FROM venda_obs").fetchall()
+    anx_rows = db.execute("SELECT ce_id, url FROM venda_anexos").fetchall()
+    # Group obs/anexos by ce_id
+    obs_map = {}
+    for o in obs_rows:
+        obs_map.setdefault(o["ce_id"], []).append(o["obs"])
+    anx_map = {}
+    for a in anx_rows:
+        anx_map.setdefault(a["ce_id"], []).append(a["url"])
+    vendas_out = []
+    for v in vendas:
+        d = dict(v)
+        d["observacoes"] = obs_map.get(v["ce_id"], [])
+        d["anexos"] = anx_map.get(v["ce_id"], [])
+        vendas_out.append(d)
     return jsonify({
         "status": "ok",
-        "vendas_count": len(vendas),
-        "detalhes_count": len(detalhes),
-        "vendas": [dict(r) for r in vendas],
-        "detalhes": [dict(r) for r in detalhes],
+        "vendas_count": len(vendas_out),
+        "obs_count": len(obs_rows),
+        "anexos_count": len(anx_rows),
+        "vendas": vendas_out,
     })
 
 # ─── Routes: Admin ──────────────────────────────────────────────────────────
