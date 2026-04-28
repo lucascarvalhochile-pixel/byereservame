@@ -538,19 +538,44 @@ def export_csv():
     where = " AND ".join(conditions) if conditions else "1=1"
     rows = db.execute(f"SELECT * FROM vendas WHERE {where} ORDER BY data DESC", params).fetchall()
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente"])
+    output = io.BytesIO()
+    output.write(b'\xef\xbb\xbf')  # UTF-8 BOM for Excel
+    wrapper = io.TextIOWrapper(output, encoding='utf-8', newline='')
+    writer = csv.writer(wrapper, delimiter=';')
+    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente", "Observações"])
     for r in rows:
+        # Fetch obs
+        obs_rows = db.execute("SELECT obs FROM detalhes WHERE venda_id = ?", (r["id"],)).fetchall()
+        obs_text = " | ".join(o["obs"] for o in obs_rows if o["obs"]) if obs_rows else ""
         writer.writerow([r["ce_id"], r["data"], r["nome"], r["tour"], r.get("pais", ""), r.get("destino", ""),
                          r["pax"], r["endereco"], r["depto"], r["telefone"], r["vendedor"],
-                         r["valor"], r["pendiente"]])
+                         r["valor"], r["pendiente"], obs_text])
+    wrapper.flush()
+    wrapper.detach()
 
     return Response(
         output.getvalue(),
-        mimetype="text/csv",
+        mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename=byereservame_export_{datetime.now().strftime('%Y%m%d')}.csv"}
     )
+
+# ─── Routes: Export All (API backup) ───────────────────────────────────────
+
+@app.route("/api/export-all")
+def api_export_all():
+    key = request.args.get("key", "")
+    if key != "byereservame2026":
+        return jsonify({"error": "unauthorized"}), 401
+    db = get_db()
+    vendas = db.execute("SELECT * FROM vendas ORDER BY data DESC").fetchall()
+    detalhes = db.execute("SELECT * FROM detalhes ORDER BY id").fetchall()
+    return jsonify({
+        "status": "ok",
+        "vendas_count": len(vendas),
+        "detalhes_count": len(detalhes),
+        "vendas": [dict(r) for r in vendas],
+        "detalhes": [dict(r) for r in detalhes],
+    })
 
 # ─── Routes: Admin ──────────────────────────────────────────────────────────
 
