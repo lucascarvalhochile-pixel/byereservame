@@ -1241,7 +1241,7 @@ DETAIL_HTML = """<!DOCTYPE html>
         <div class="anexo-grid">
             {% for a in anexos %}
             <div class="anexo-item">
-                <a href="https://zerandoochile.reservame.cl/{{ a.url }}" target="_blank">{{ a.url.split('/')[-1] }}</a>
+                <a href="{{ a.url }}" target="_blank">{{ a.url.split('/')[-1] }}</a>
             </div>
             {% endfor %}
         </div>
