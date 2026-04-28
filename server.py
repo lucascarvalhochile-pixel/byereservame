@@ -412,15 +412,30 @@ def index():
     """
     rows = db.execute(data_sql, params + [per_page, offset]).fetchall()
 
-    # Get vendedores and destinos for filter dropdowns
+    # Get vendedores, destinos, paises for filter dropdowns (respecting user access)
+    filter_conditions = []
+    filter_params = []
+    if allowed_paises:
+        ph = ",".join("?" * len(allowed_paises))
+        filter_conditions.append(f"pais IN ({ph})")
+        filter_params.extend(allowed_paises)
+    if allowed_vendedores:
+        ph = ",".join("?" * len(allowed_vendedores))
+        filter_conditions.append(f"vendedor IN ({ph})")
+        filter_params.extend(allowed_vendedores)
+    filter_where = " AND ".join(filter_conditions) if filter_conditions else "1=1"
+
     vendedores = db.execute(
-        "SELECT DISTINCT vendedor FROM vendas WHERE vendedor != '' ORDER BY vendedor"
+        f"SELECT DISTINCT vendedor FROM vendas WHERE vendedor != '' AND {filter_where} ORDER BY vendedor",
+        filter_params
     ).fetchall()
     destinos = db.execute(
-        "SELECT DISTINCT destino FROM vendas WHERE destino != '' ORDER BY destino"
+        f"SELECT DISTINCT destino FROM vendas WHERE destino != '' AND {filter_where} ORDER BY destino",
+        filter_params
     ).fetchall()
     paises = db.execute(
-        "SELECT DISTINCT pais FROM vendas WHERE pais != '' ORDER BY pais"
+        f"SELECT DISTINCT pais FROM vendas WHERE pais != '' AND {filter_where} ORDER BY pais",
+        filter_params
     ).fetchall()
 
     # Stats
