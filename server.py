@@ -255,7 +255,7 @@ def init_db():
             ("admin", "admin123", "Administrador", "admin", "ALL", "ALL", 1),
             ("atendimento", "atend2026", "Atendimento", "viewer", "ALL", "ALL", 0),
             ("operacao", "oper2026", "Operação", "viewer", "ALL", "ALL", 1),
-            ("yacana", "yacana2026", "Yacana Passeios", "viewer", "ALL", "felipegonzalezyacana,flaviasoaresyacana,jalvesyacanalc,mchavesposyacana,yfernandesyacanalc", 1),
+            ("yacana", "yacana1102", "Yacana Passeios", "viewer", "ALL", "felipegonzalezyacana,flaviasoaresyacana,jalvesyacanalc,mchavesposyacana,yfernandesyacanalc", 1),
         ]
         for u, pw, nome, role, paises, vendedores, csv_ok in default_users:
             pw_hash = hashlib.sha256(pw.encode()).hexdigest()
