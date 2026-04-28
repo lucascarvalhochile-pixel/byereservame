@@ -994,12 +994,23 @@ BASE_CSS = """
     .obs-list { list-style: none; }
     .obs-list li { padding: 10px 14px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; border-left: 3px solid #38bdf8; }
 
-    .anexo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .anexo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
     .anexo-item {
-        background: #0f172a; border-radius: 8px; padding: 10px 14px; font-size: 12px;
-        color: #94a3b8; border: 1px solid #334155; word-break: break-all;
+        background: #0f172a; border-radius: 10px; font-size: 12px;
+        color: #94a3b8; border: 1px solid #334155; overflow: hidden;
+        transition: border-color 0.2s;
     }
-    .anexo-item a { color: #38bdf8; }
+    .anexo-item:hover { border-color: #38bdf8; }
+    .anexo-item a { color: #38bdf8; text-decoration: none; display: block; }
+    .anexo-thumb { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: pointer; background: #0a0f1a; }
+    .anexo-pdf-box { width: 100%; aspect-ratio: 4/3; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0a0f1a; cursor: pointer; }
+    .anexo-pdf-icon { font-size: 40px; margin-bottom: 6px; }
+    .anexo-pdf-label { color: #f43f5e; font-weight: 600; font-size: 13px; }
+    .anexo-name { padding: 8px 10px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .anexo-modal { display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; cursor: zoom-out; }
+    .anexo-modal.active { display: flex; }
+    .anexo-modal img { max-width: 92vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+    .anexo-modal-close { position: fixed; top: 16px; right: 24px; color: #fff; font-size: 32px; cursor: pointer; z-index: 10000; }
 
     .login-container {
         min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -1240,11 +1251,32 @@ DETAIL_HTML = """<!DOCTYPE html>
         {% if anexos %}
         <div class="anexo-grid">
             {% for a in anexos %}
+            {% set fname = a.url.split('/')[-1] %}
+            {% set is_img = fname.lower().endswith(('.jpeg','.jpg','.png','.gif','.webp')) %}
             <div class="anexo-item">
-                <a href="{{ a.url }}" target="_blank">{{ a.url.split('/')[-1] }}</a>
+                {% if is_img %}
+                <img class="anexo-thumb" src="{{ a.url }}" alt="{{ fname }}" loading="lazy" onclick="openModal(this.src)">
+                {% else %}
+                <a href="{{ a.url }}" target="_blank">
+                    <div class="anexo-pdf-box">
+                        <div class="anexo-pdf-icon">&#128196;</div>
+                        <div class="anexo-pdf-label">PDF</div>
+                    </div>
+                </a>
+                {% endif %}
+                <div class="anexo-name"><a href="{{ a.url }}" target="_blank">{{ fname }}</a></div>
             </div>
             {% endfor %}
         </div>
+        <div class="anexo-modal" id="imgModal" onclick="closeModal()">
+            <span class="anexo-modal-close">&times;</span>
+            <img id="modalImg" src="">
+        </div>
+        <script>
+        function openModal(src){var m=document.getElementById('imgModal');document.getElementById('modalImg').src=src;m.classList.add('active');}
+        function closeModal(){document.getElementById('imgModal').classList.remove('active');}
+        document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
+        </script>
         {% else %}
         <p style="color:#64748b">Nenhum anexo encontrado.</p>
         {% endif %}
