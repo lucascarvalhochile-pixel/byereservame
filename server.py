@@ -49,6 +49,32 @@ def get_pais(destino):
     """Retorna o país a partir do destino (cidade)."""
     return DESTINO_TO_PAIS.get(destino, "Chile")
 
+def build_vendedor_filter(vendedores_acesso, column="vendedor"):
+    """Build SQL conditions for vendedores_acesso.
+    Supports wildcards: '*yacana*' becomes LIKE '%yacana%'.
+    Multiple patterns separated by comma. Returns (sql_fragment, params_list)."""
+    if vendedores_acesso == "ALL":
+        return None, []
+    items = [v.strip() for v in vendedores_acesso.split(",") if v.strip()]
+    if not items:
+        return None, []
+    likes = []
+    exacts = []
+    params = []
+    for item in items:
+        if "*" in item:
+            likes.append(f"{column} LIKE ?")
+            params.append(item.replace("*", "%"))
+        else:
+            exacts.append(item)
+    parts = []
+    if exacts:
+        parts.append(f"{column} IN ({','.join(['?']*len(exacts))})")
+        params = list(exacts) + params
+    parts.extend(likes)
+    sql = "(" + " OR ".join(parts) + ")"
+    return sql, params
+
 def classify_destino(tour):
     """Classifica o destino (nível cidade) a partir do nome do tour.
     Regras validadas pelo Lucas em 27/04/2026 (55 correções aplicadas)."""
@@ -347,11 +373,9 @@ def index():
     if user_paises != "ALL":
         allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
 
-    # User's vendor access filter
+    # User's vendor access filter (supports wildcards like *yacana*)
     user_vendedores = session.get("vendedores_acesso", "ALL")
-    allowed_vendedores = None
-    if user_vendedores != "ALL":
-        allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+    vend_sql, vend_params = build_vendedor_filter(user_vendedores, "v.vendedor")
 
     # Build query
     conditions = []
@@ -364,10 +388,9 @@ def index():
         params.extend(allowed_paises)
 
     # Restrict to allowed vendors
-    if allowed_vendedores:
-        placeholders = ",".join("?" * len(allowed_vendedores))
-        conditions.append(f"v.vendedor IN ({placeholders})")
-        params.extend(allowed_vendedores)
+    if vend_sql:
+        conditions.append(vend_sql)
+        params.extend(vend_params)
 
     if q:
         conditions.append("(v.nome LIKE ? OR v.ce_id LIKE ? OR v.tour LIKE ? OR v.telefone LIKE ? OR v.endereco LIKE ?)")
@@ -419,10 +442,9 @@ def index():
         ph = ",".join("?" * len(allowed_paises))
         filter_conditions.append(f"pais IN ({ph})")
         filter_params.extend(allowed_paises)
-    if allowed_vendedores:
-        ph = ",".join("?" * len(allowed_vendedores))
-        filter_conditions.append(f"vendedor IN ({ph})")
-        filter_params.extend(allowed_vendedores)
+    if vend_sql:
+        filter_conditions.append(vend_sql.replace("v.vendedor", "vendedor"))
+        filter_params.extend(vend_params)
     filter_where = " AND ".join(filter_conditions) if filter_conditions else "1=1"
 
     vendedores = db.execute(
@@ -506,11 +528,9 @@ def _do_export_csv():
     if user_paises != "ALL":
         allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
 
-    # Apply user vendor restriction
+    # Apply user vendor restriction (supports wildcards like *yacana*)
     user_vendedores = session.get("vendedores_acesso", "ALL")
-    allowed_vendedores = None
-    if user_vendedores != "ALL":
-        allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+    vend_sql, vend_params = build_vendedor_filter(user_vendedores, "vendedor")
 
     conditions = []
     params = []
@@ -518,10 +538,9 @@ def _do_export_csv():
         placeholders = ",".join("?" * len(allowed_paises))
         conditions.append(f"pais IN ({placeholders})")
         params.extend(allowed_paises)
-    if allowed_vendedores:
-        placeholders = ",".join("?" * len(allowed_vendedores))
-        conditions.append(f"vendedor IN ({placeholders})")
-        params.extend(allowed_vendedores)
+    if vend_sql:
+        conditions.append(vend_sql)
+        params.extend(vend_params)
     if q:
         conditions.append("(nome LIKE ? OR ce_id LIKE ? OR tour LIKE ?)")
         like = f"%{q}%"
@@ -960,9 +979,7 @@ def api_previsao_data():
         if user_paises != "ALL":
             allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
 
-        allowed_vendedores = None
-        if user_vendedores != "ALL":
-            allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+        vend_sql, vend_params = build_vendedor_filter(user_vendedores, "vendedor")
 
         # Query with GROUP BY
         query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ? AND LOWER(tour) NOT LIKE '%desconto%'"
@@ -974,11 +991,10 @@ def api_previsao_data():
             query += f" AND pais IN ({placeholders})"
             params.extend(allowed_paises)
 
-        # Add seller filter if restricted
-        if allowed_vendedores:
-            placeholders = ",".join(["?"] * len(allowed_vendedores))
-            query += f" AND vendedor IN ({placeholders})"
-            params.extend(allowed_vendedores)
+        # Add seller filter if restricted (supports wildcards like *yacana*)
+        if vend_sql:
+            query += f" AND {vend_sql}"
+            params.extend(vend_params)
 
         query += " GROUP BY tour, data"
 
@@ -1428,7 +1444,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
                 </select>
             </div>
             <div><label>Países (ou ALL)</label><input type="text" name="paises_acesso" value="ALL" class="inp inp-md" placeholder="Chile,Argentina ou ALL"></div>
-            <div><label>Vendedores (ou ALL)</label><input type="text" name="vendedores_acesso" value="ALL" class="inp inp-md" placeholder="usuario1,usuario2 ou ALL"></div>
+            <div><label>Vendedores (ou ALL)</label><input type="text" name="vendedores_acesso" value="ALL" class="inp inp-md" placeholder="usuario1,*yacana* ou ALL"></div>
             <div style="display:flex;align-items:center;gap:6px;padding-bottom:4px">
                 <input type="checkbox" name="pode_exportar" id="add_csv" value="1">
                 <label for="add_csv" style="margin:0;color:#e2e8f0">Exportar CSV</label>
