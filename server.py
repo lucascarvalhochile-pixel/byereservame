@@ -962,6 +962,73 @@ def api_enrich():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ─── Routes: Previsão de Tours ──────────────────────────────────────────────
+
+@app.route("/api/previsao-data")
+@login_required
+def api_previsao_data():
+    """API endpoint para dados de previsão de tours por dia."""
+    try:
+        data_de = request.args.get("data_de", "").strip()
+        data_ate = request.args.get("data_ate", "").strip()
+
+        if not data_de or not data_ate:
+            return jsonify({"error": "data_de e data_ate são obrigatórios"}), 400
+
+        db = get_db()
+
+        # Apply permission filters
+        user_paises = session.get("paises_acesso", "ALL")
+        user_vendedores = session.get("vendedores_acesso", "ALL")
+
+        allowed_paises = None
+        if user_paises != "ALL":
+            allowed_paises = [p.strip() for p in user_paises.split(",") if p.strip()]
+
+        allowed_vendedores = None
+        if user_vendedores != "ALL":
+            allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
+
+        # Query with GROUP BY
+        query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ?"
+        params = [data_de, data_ate]
+
+        # Add country filter if restricted
+        if allowed_paises:
+            placeholders = ",".join(["?"] * len(allowed_paises))
+            query += f" AND pais IN ({placeholders})"
+            params.extend(allowed_paises)
+
+        # Add seller filter if restricted
+        if allowed_vendedores:
+            placeholders = ",".join(["?"] * len(allowed_vendedores))
+            query += f" AND vendedor IN ({placeholders})"
+            params.extend(allowed_vendedores)
+
+        query += " GROUP BY tour, data"
+
+        rows = db.execute(query, params).fetchall()
+        tours = [
+            {
+                "tour": row["tour"],
+                "data": row["data"],
+                "pais": row["pais"],
+                "destino": row["destino"],
+                "pax": row["total_pax"] or 0
+            }
+            for row in rows
+        ]
+
+        return jsonify({"tours": tours})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/previsao")
+@login_required
+def previsao():
+    """Página de previsão de tours por dia."""
+    return render_template_string(PREVISAO_HTML, user=session)
+
 # ─── HTML Templates ─────────────────────────────────────────────────────────
 
 BASE_CSS = """
@@ -1126,6 +1193,7 @@ INDEX_HTML = """<!DOCTYPE html>
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}">Previsão</a>
         {% if user.role == 'admin' %}
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
@@ -1359,6 +1427,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}">Previsão</a>
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}" style="color:#f8fafc">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
@@ -1442,6 +1511,7 @@ ADMIN_STATS_HTML = """<!DOCTYPE html>
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}">Previsão</a>
         <a href="{{ url_for('admin_stats') }}" style="color:#f8fafc">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
@@ -1489,6 +1559,7 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}">Previsão</a>
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
@@ -1541,6 +1612,7 @@ ACCESS_LOG_HTML = """<!DOCTYPE html>
     <div class="brand">BYE<span>RESERVAME</span></div>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}">Previsão</a>
         <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}" style="color:#f8fafc">Acessos</a>
@@ -1569,6 +1641,460 @@ ACCESS_LOG_HTML = """<!DOCTYPE html>
         </table>
     </div>
 </div>
+</body></html>"""
+
+PREVISAO_HTML = """<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Previsão de Tours — BYERESERVAME</title>""" + BASE_CSS + """
+<style>
+    .previsao-navbar { background: #1e293b; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+    .previsao-navbar .brand { font-size: 20px; font-weight: 700; color: #38bdf8; letter-spacing: 1px; }
+    .previsao-navbar .brand span { color: #f43f5e; }
+    .previsao-navbar nav a { color: #94a3b8; text-decoration: none; margin-left: 20px; font-size: 14px; transition: color 0.2s; }
+    .previsao-navbar nav a:hover { color: #f8fafc; }
+    .previsao-navbar nav a[data-current=true] { color: #f8fafc; }
+    .previsao-navbar .user-info { color: #64748b; font-size: 13px; }
+    .previsao-navbar .user-info a { color: #f43f5e; }
+
+    .previsao-container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+
+    .filter-bar { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #334155; }
+    .filter-bar .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .filter-bar label { display: block; color: #94a3b8; font-size: 12px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .filter-bar input, .filter-bar select { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; font-size: 14px; outline: none; }
+    .filter-bar input:focus, .filter-bar select:focus { border-color: #38bdf8; }
+    .filter-bar input[type=date] { width: 140px; }
+    .filter-bar select { min-width: 160px; }
+    .filter-bar button { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: #2563eb; color: white; transition: all 0.2s; }
+    .filter-bar button:hover { background: #1d4ed8; }
+
+    .week-nav { display: flex; gap: 12px; margin-bottom: 20px; }
+    .week-nav button { padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: #334155; color: #e2e8f0; transition: all 0.2s; }
+    .week-nav button:hover { background: #475569; }
+
+    .kpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .kpi-card { background: #1e293b; border-radius: 12px; padding: 16px; border: 1px solid #334155; }
+    .kpi-card .label { color: #94a3b8; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+    .kpi-card .value { font-size: 28px; font-weight: 700; color: #38bdf8; }
+
+    .destino-group { margin-bottom: 24px; }
+    .destino-header { background: #1e293b; border: 1px solid #334155; padding: 12px 16px; border-radius: 8px 8px 0 0; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+    .destino-header .title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #e2e8f0; }
+    .destino-header .flag { font-size: 20px; }
+    .destino-header .toggle { color: #94a3b8; transition: transform 0.2s; }
+    .destino-header.collapsed .toggle { transform: rotate(180deg); }
+    .destino-content { background: #0f172a; border: 1px solid #334155; border-top: none; overflow-x: auto; }
+
+    .tour-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tour-table th { background: #1e293b; color: #94a3b8; text-align: left; padding: 12px 8px; border-bottom: 1px solid #334155; font-weight: 600; text-transform: uppercase; font-size: 11px; white-space: nowrap; }
+    .tour-table td { padding: 10px 8px; border-bottom: 1px solid #1e293b; text-align: center; }
+    .tour-table td:first-child { text-align: left; color: #e2e8f0; font-weight: 500; }
+    .tour-table tr:hover { background: #1a202c; }
+    .tour-table .subtotal-row { background: #1e293b; font-weight: 600; color: #38bdf8; }
+
+    .pax-cell { min-width: 45px; border-radius: 4px; margin: 2px auto; display: block; }
+    a.pax-link { text-decoration: none; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+    a.pax-link:hover { transform: scale(1.15); box-shadow: 0 0 8px rgba(99,102,241,0.4); }
+    .pax-0 { background: #1e2130; color: #64748b; }
+    .pax-1-4 { background: rgba(52, 211, 153, 0.1); color: #10b981; }
+    .pax-5-9 { background: rgba(251, 191, 36, 0.12); color: #f59e0b; }
+    .pax-10-14 { background: rgba(244, 114, 182, 0.12); color: #ec4899; }
+    .pax-15 { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+    .total-bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; }
+    .total-day { text-align: center; }
+    .total-day .date { color: #94a3b8; font-size: 12px; margin-bottom: 4px; }
+    .total-day .value { font-size: 20px; font-weight: 700; color: #38bdf8; }
+
+    .destino-chile { border-left: 4px solid #dc2626; }
+    .destino-peru { border-left: 4px solid #d97706; }
+    .destino-colombia { border-left: 4px solid #059669; }
+    .destino-argentina { border-left: 4px solid #2563eb; }
+    .destino-republicadominicana { border-left: 4px solid #7c3aed; }
+    .destino-mexico { border-left: 4px solid #db2777; }
+    .destino-default { border-left: 4px solid #6366f1; }
+
+    .destino-header.chile { background: linear-gradient(90deg, #dc2626 0%, transparent 100%); }
+    .destino-header.peru { background: linear-gradient(90deg, #d97706 0%, transparent 100%); }
+    .destino-header.colombia { background: linear-gradient(90deg, #059669 0%, transparent 100%); }
+    .destino-header.argentina { background: linear-gradient(90deg, #2563eb 0%, transparent 100%); }
+    .destino-header.republicadominicana { background: linear-gradient(90deg, #7c3aed 0%, transparent 100%); }
+    .destino-header.mexico { background: linear-gradient(90deg, #db2777 0%, transparent 100%); }
+    .destino-header.default { background: linear-gradient(90deg, #6366f1 0%, transparent 100%); }
+
+    .no-data { text-align: center; color: #64748b; padding: 40px; font-style: italic; }
+</style>
+</head><body>
+<div class="previsao-navbar">
+    <div class="brand">BYE<span>RESERVAME</span></div>
+    <nav>
+        <a href="{{ url_for('index') }}">Vendas</a>
+        <a href="{{ url_for('previsao') }}" data-current="true">Previsão</a>
+        {% if user.role == 'admin' %}
+        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+        <a href="{{ url_for('admin_users') }}">Usuários</a>
+        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
+        <a href="{{ url_for('admin_import') }}">Importar</a>
+        {% endif %}
+    </nav>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}">Sair</a></div>
+</div>
+
+<div class="previsao-container">
+    <div class="filter-bar">
+        <div class="row">
+            <div>
+                <label>De</label>
+                <input type="date" id="dataDeInput" name="data_de">
+            </div>
+            <div>
+                <label>Até</label>
+                <input type="date" id="dataAteInput" name="data_ate">
+            </div>
+            <div>
+                <label>País</label>
+                <select id="paisFilter" name="pais">
+                    <option value="">Todos</option>
+                    <option value="Chile">Chile</option>
+                    <option value="Peru">Peru</option>
+                    <option value="Colômbia">Colômbia</option>
+                    <option value="Argentina">Argentina</option>
+                    <option value="República Dominicana">República Dominicana</option>
+                    <option value="México">México</option>
+                </select>
+            </div>
+            <div>
+                <label>Destino</label>
+                <select id="destinoFilter" name="destino">
+                    <option value="">Todos</option>
+                    <option value="Santiago">Santiago</option>
+                    <option value="Atacama">Atacama</option>
+                    <option value="Uyuni">Uyuni</option>
+                    <option value="Cusco">Cusco</option>
+                    <option value="Lima">Lima</option>
+                    <option value="San Andres">San Andres</option>
+                    <option value="Cartagena">Cartagena</option>
+                    <option value="Buenos Aires">Buenos Aires</option>
+                    <option value="Bariloche">Bariloche</option>
+                    <option value="Mendoza">Mendoza</option>
+                    <option value="Ushuaia">Ushuaia</option>
+                    <option value="El Calafate">El Calafate</option>
+                    <option value="Punta Cana">Punta Cana</option>
+                    <option value="Cancún">Cancún</option>
+                </select>
+            </div>
+            <div style="flex:1; min-width:200px">
+                <label>Tour</label>
+                <input type="text" id="tourSearch" placeholder="Buscar tour...">
+            </div>
+            <button onclick="loadPrevisao()">Filtrar</button>
+        </div>
+    </div>
+
+    <div class="week-nav">
+        <button onclick="goToPreviousWeek()">← Semana Anterior</button>
+        <button onclick="goToCurrentWeek()">Semana Atual</button>
+        <button onclick="goToNextWeek()">Próx. Semana →</button>
+    </div>
+
+    <div class="kpi-cards">
+        <div class="kpi-card">
+            <div class="label">Tours Ativos</div>
+            <div class="value" id="kpiToursAtivos">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">PAX no Período</div>
+            <div class="value" id="kpiPaxPeriodo">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Média PAX/Dia</div>
+            <div class="value" id="kpiMediaPax">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Destinos</div>
+            <div class="value" id="kpiDestinos">0</div>
+        </div>
+    </div>
+
+    <div id="previsaoContent">
+        <div class="no-data">Carregando...</div>
+    </div>
+
+    <div class="total-bar" id="totalBar"></div>
+</div>
+
+<script>
+const flagMap = {
+    'Chile': '🇨🇱',
+    'Peru': '🇵🇪',
+    'Colômbia': '🇨🇴',
+    'Argentina': '🇦🇷',
+    'República Dominicana': '🇩🇴',
+    'México': '🇲🇽'
+};
+
+const colorMap = {
+    'Chile': 'chile',
+    'Peru': 'peru',
+    'Colômbia': 'colombia',
+    'Argentina': 'argentina',
+    'República Dominicana': 'republicadominicana',
+    'México': 'mexico'
+};
+
+function getMonday(d) {
+    d = new Date(d);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(d.setDate(diff));
+}
+
+function formatDate(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function setCurrentWeek() {
+    const today = new Date();
+    const monday = getMonday(today);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    document.getElementById('dataDeInput').value = formatDate(monday);
+    document.getElementById('dataAteInput').value = formatDate(sunday);
+}
+
+function goToPreviousWeek() {
+    const de = new Date(document.getElementById('dataDeInput').value);
+    de.setDate(de.getDate() - 7);
+    const ate = new Date(document.getElementById('dataAteInput').value);
+    ate.setDate(ate.getDate() - 7);
+    document.getElementById('dataDeInput').value = formatDate(de);
+    document.getElementById('dataAteInput').value = formatDate(ate);
+    loadPrevisao();
+}
+
+function goToCurrentWeek() {
+    setCurrentWeek();
+    loadPrevisao();
+}
+
+function goToNextWeek() {
+    const de = new Date(document.getElementById('dataDeInput').value);
+    de.setDate(de.getDate() + 7);
+    const ate = new Date(document.getElementById('dataAteInput').value);
+    ate.setDate(ate.getDate() + 7);
+    document.getElementById('dataDeInput').value = formatDate(de);
+    document.getElementById('dataAteInput').value = formatDate(ate);
+    loadPrevisao();
+}
+
+async function loadPrevisao() {
+    const dataDe = document.getElementById('dataDeInput').value;
+    const dataAte = document.getElementById('dataAteInput').value;
+    const pais = document.getElementById('paisFilter').value;
+    const destino = document.getElementById('destinoFilter').value;
+    const tour = document.getElementById('tourSearch').value.toLowerCase();
+
+    if (!dataDe || !dataAte) {
+        alert('Selecione um intervalo de datas');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/previsao-data?data_de=${dataDe}&data_ate=${dataAte}`);
+        const data = await response.json();
+
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        let tours = data.tours;
+
+        // Apply filters
+        if (pais) {
+            tours = tours.filter(t => t.pais === pais);
+        }
+        if (destino) {
+            tours = tours.filter(t => t.destino === destino);
+        }
+        if (tour) {
+            tours = tours.filter(t => t.tour.toLowerCase().includes(tour));
+        }
+
+        renderPrevisao(tours, dataDe, dataAte);
+    } catch (err) {
+        console.error(err);
+        document.getElementById('previsaoContent').innerHTML = '<div class="no-data">Erro ao carregar dados</div>';
+    }
+}
+
+function renderPrevisao(tours, dataDe, dataAte) {
+    if (tours.length === 0) {
+        document.getElementById('previsaoContent').innerHTML = '<div class="no-data">Nenhum dado encontrado para este período</div>';
+        document.getElementById('totalBar').innerHTML = '';
+        updateKPIs([], dataDe, dataAte);
+        return;
+    }
+
+    // Get all dates in range
+    const startDate = new Date(dataDe);
+    const endDate = new Date(dataAte);
+    const dates = [];
+    let current = new Date(startDate);
+    while (current <= endDate) {
+        dates.push(formatDate(current));
+        current.setDate(current.getDate() + 1);
+    }
+
+    // Group by destino
+    const grouped = {};
+    tours.forEach(t => {
+        if (!grouped[t.destino]) {
+            grouped[t.destino] = {};
+        }
+        if (!grouped[t.destino][t.tour]) {
+            grouped[t.destino][t.tour] = {};
+        }
+        grouped[t.destino][t.tour][t.data] = t.pax;
+    });
+
+    let html = '';
+    Object.keys(grouped).sort().forEach(destino => {
+        const pais = tours.find(t => t.destino === destino)?.pais || 'DEFAULT';
+        const flag = flagMap[pais] || '';
+        const colorClass = colorMap[pais] || 'default';
+        const tounsInDestino = grouped[destino];
+
+        html += `<div class="destino-group destino-${colorClass}">
+            <div class="destino-header ${colorClass}" onclick="toggleDestino(event)">
+                <div class="title">
+                    <span class="flag">${flag}</span>
+                    <span>${destino}</span>
+                </div>
+                <div class="toggle">▼</div>
+            </div>
+            <div class="destino-content">
+                <table class="tour-table">
+                    <thead>
+                        <tr>
+                            <th>Tour</th>`;
+
+        dates.forEach(date => {
+            const [y, m, d] = date.split('-');
+            const dateObj = new Date(y, m - 1, d);
+            const dayName = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'][dateObj.getDay()];
+            html += `<th>${dayName}<br>${d}/${m}</th>`;
+        });
+
+        html += `<th>Total</th></tr></thead><tbody>`;
+
+        // Tours
+        let destTotal = {};
+        Object.keys(tounsInDestino).sort().forEach(tourName => {
+            const tourDays = tounsInDestino[tourName];
+            let tourTotal = 0;
+
+            html += '<tr>';
+            html += `<td>${tourName}</td>`;
+
+            dates.forEach(date => {
+                const pax = tourDays[date] || 0;
+                tourTotal += pax;
+
+                if (!destTotal[date]) destTotal[date] = 0;
+                destTotal[date] += pax;
+
+                let paxClass = 'pax-0';
+                if (pax >= 15) paxClass = 'pax-15';
+                else if (pax >= 10) paxClass = 'pax-10-14';
+                else if (pax >= 5) paxClass = 'pax-5-9';
+                else if (pax >= 1) paxClass = 'pax-1-4';
+
+                if (pax > 0) {
+                    const link = `/?tour=${encodeURIComponent(tour)}&data_de=${date}&data_ate=${date}`;
+                    html += `<td><a href="${link}" class="pax-cell ${paxClass} pax-link">${pax}</a></td>`;
+                } else {
+                    html += `<td><div class="pax-cell ${paxClass}">—</div></td>`;
+                }
+            });
+
+            html += `<td style="font-weight:600;color:#38bdf8">${tourTotal}</td>`;
+            html += '</tr>';
+        });
+
+        // Subtotal
+        html += '<tr class="subtotal-row">';
+        html += '<td>Subtotal</td>';
+        let grandTotal = 0;
+        dates.forEach(date => {
+            const total = destTotal[date] || 0;
+            grandTotal += total;
+            if (total > 0) {
+                const link = `/?destino=${encodeURIComponent(destino)}&data_de=${date}&data_ate=${date}`;
+                html += `<td><a href="${link}" class="pax-link" style="color:#38bdf8;text-decoration:none">${total}</a></td>`;
+            } else {
+                html += `<td>—</td>`;
+            }
+        });
+        html += `<td>${grandTotal}</td>`;
+        html += '</tr></tbody></table></div></div>';
+    });
+
+    document.getElementById('previsaoContent').innerHTML = html;
+
+    // Render total bar
+    const dateToTals = {};
+    tours.forEach(t => {
+        if (!dateToTals[t.data]) dateToTals[t.data] = 0;
+        dateToTals[t.data] += t.pax;
+    });
+
+    let totalHtml = '';
+    dates.forEach(date => {
+        const total = dateToTals[date] || 0;
+        const [y, m, d] = date.split('-');
+        const dateObj = new Date(y, m - 1, d);
+        const dayName = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'][dateObj.getDay()];
+        totalHtml += `<div class="total-day"><div class="date">${dayName} ${d}/${m}</div><div class="value">${total}</div></div>`;
+    });
+
+    document.getElementById('totalBar').innerHTML = totalHtml;
+    updateKPIs(tours, dataDe, dataAte);
+}
+
+function toggleDestino(event) {
+    const header = event.currentTarget;
+    const content = header.nextElementSibling;
+    header.classList.toggle('collapsed');
+    content.style.display = content.style.display === 'none' ? '' : 'none';
+}
+
+function updateKPIs(tours, dataDe, dataAte) {
+    const uniqueTours = new Set(tours.map(t => t.tour));
+    const totalPax = tours.reduce((sum, t) => sum + (t.pax || 0), 0);
+
+    const startDate = new Date(dataDe);
+    const endDate = new Date(dataAte);
+    const daysDiff = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const mediaPax = daysDiff > 0 ? Math.round(totalPax / daysDiff) : 0;
+
+    const uniqueDestinos = new Set(tours.map(t => t.destino));
+
+    document.getElementById('kpiToursAtivos').textContent = uniqueTours.size;
+    document.getElementById('kpiPaxPeriodo').textContent = totalPax;
+    document.getElementById('kpiMediaPax').textContent = mediaPax;
+    document.getElementById('kpiDestinos').textContent = uniqueDestinos.size;
+}
+
+// Initialize on load
+window.addEventListener('load', () => {
+    setCurrentWeek();
+    loadPrevisao();
+});
+</script>
 </body></html>"""
 
 # ─── Init ───────────────────────────────────────────────────────────────────
