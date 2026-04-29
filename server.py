@@ -1737,7 +1737,7 @@ PREVISAO_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('admin_import') }}">Importar</a>
         {% endif %}
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 
 <div class="previsao-container">
