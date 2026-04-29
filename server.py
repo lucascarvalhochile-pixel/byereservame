@@ -262,6 +262,12 @@ def init_db():
         db.execute("ALTER TABLE users ADD COLUMN pode_exportar INTEGER NOT NULL DEFAULT 0")
         db.commit()
         print("Migration: added 'pode_exportar' column to users", flush=True)
+    # Migration: add cancelado column to vendas if missing
+    if "cancelado" not in cols:
+        db.execute("ALTER TABLE vendas ADD COLUMN cancelado INTEGER DEFAULT 0")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_vendas_cancelado ON vendas(cancelado)")
+        db.commit()
+        print("Migration: added 'cancelado' column to vendas", flush=True)
     # Backfill/reclassify ALL vendas (destino + pais) on every startup
     # This ensures any corrections to classify_destino are applied
     all_rows = db.execute("SELECT id, tour FROM vendas").fetchall()
@@ -364,6 +370,7 @@ def index():
     tour_filter = request.args.get("tour", "")
     destino_filter = request.args.get("destino", "")
     pais_filter = request.args.get("pais", "")
+    status_filter = request.args.get("status", "")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
@@ -415,6 +422,14 @@ def index():
     if pais_filter:
         conditions.append("v.pais = ?")
         params.append(pais_filter)
+
+    # Status filter: default shows only active (non-cancelled)
+    if status_filter == "cancelados":
+        conditions.append("v.cancelado = 1")
+    elif status_filter == "todos":
+        pass  # show everything
+    else:
+        conditions.append("(v.cancelado = 0 OR v.cancelado IS NULL)")
 
     where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -480,6 +495,7 @@ def index():
         tour_filter=tour_filter,
         destino_filter=destino_filter,
         pais_filter=pais_filter,
+        status_filter=status_filter,
         vendedores=vendedores,
         destinos=destinos,
         paises=paises,
@@ -561,21 +577,31 @@ def _do_export_csv():
         conditions.append("pais = ?")
         params.append(pais)
 
+    # Status filter
+    status_filter = request.args.get("status", "")
+    if status_filter == "cancelados":
+        conditions.append("cancelado = 1")
+    elif status_filter == "todos":
+        pass
+    else:
+        conditions.append("(cancelado = 0 OR cancelado IS NULL)")
+
     where = " AND ".join(conditions) if conditions else "1=1"
     rows = db.execute(f"SELECT * FROM vendas WHERE {where} ORDER BY data DESC", params).fetchall()
 
     output = io.StringIO()
     output.write('﻿')  # UTF-8 BOM for Excel
     writer = csv.writer(output, delimiter=';')
-    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente", "Observações"])
+    writer.writerow(["ID", "Data", "Nome", "Tour", "País", "Destino", "PAX", "Endereço", "Depto", "Telefone", "Vendedor", "Valor", "Pendiente", "Status", "Observações"])
     for r in rows:
         obs_rows = db.execute("SELECT obs FROM venda_obs WHERE ce_id = ?", (r["ce_id"],)).fetchall()
         obs_text = " | ".join(o["obs"] for o in obs_rows if o["obs"]) if obs_rows else ""
         rd = dict(r)
+        status_label = "CANCELADO" if rd.get("cancelado") else "Ativo"
         writer.writerow([rd.get("ce_id",""), rd.get("data",""), rd.get("nome",""), rd.get("tour",""),
                          rd.get("pais",""), rd.get("destino",""), rd.get("pax",""), rd.get("endereco",""),
                          rd.get("depto",""), rd.get("telefone",""), rd.get("vendedor",""),
-                         rd.get("valor",""), rd.get("pendiente",""), obs_text])
+                         rd.get("valor",""), rd.get("pendiente",""), status_label, obs_text])
 
     return Response(
         output.getvalue().encode('utf-8'),
@@ -735,31 +761,32 @@ def import_data_from_upload(vendas, details):
         pais_in = v.get("Pais", "")
         destino = destino_in if destino_in else classify_destino(tour_name)
         pais = pais_in if pais_in else get_pais(destino)
+        cancelado = int(v.get("Cancelado", 0))
         # Upsert: update if exists, insert if not
         existing = db.execute("SELECT 1 FROM vendas WHERE ce_id = ?", (ce_id,)).fetchone()
         if existing:
             db.execute("""
                 UPDATE vendas SET data=?, nome=?, tour=?, pax=?, endereco=?, depto=?,
                     telefone=?, vendedor=?, valor=?, pendiente=?,
-                    ano=?, mes=?, destino=?, pais=?
+                    ano=?, mes=?, destino=?, pais=?, cancelado=?
                 WHERE ce_id=?
             """, (
                 data, v.get("Nome", ""), tour_name, v.get("PAX", ""),
                 v.get("Endereço", ""), v.get("Depto", ""),
                 v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
                 v.get("Pendiente", ""),
-                ano, mes, destino, pais, ce_id
+                ano, mes, destino, pais, cancelado, ce_id
             ))
             updated += 1
         else:
             db.execute("""
-                INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO vendas (ce_id, data, nome, tour, pax, endereco, depto, telefone, vendedor, valor, pendiente, ano, mes, destino, pais, cancelado)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ce_id, data, v.get("Nome", ""), tour_name,
                 v.get("PAX", ""), v.get("Endereço", ""), v.get("Depto", ""),
                 v.get("Telefone", ""), v.get("Vendedor", ""), v.get("Valor", ""),
-                v.get("Pendiente", ""), ano, mes, destino, pais
+                v.get("Pendiente", ""), ano, mes, destino, pais, cancelado
             ))
 
         # Process details (obs/anexos) for BOTH new and existing records
@@ -982,7 +1009,7 @@ def api_previsao_data():
         vend_sql, vend_params = build_vendedor_filter(user_vendedores, "vendedor")
 
         # Query with GROUP BY
-        query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ? AND LOWER(tour) NOT LIKE '%desconto%'"
+        query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ? AND LOWER(tour) NOT LIKE '%desconto%' AND (cancelado = 0 OR cancelado IS NULL)"
         params = [data_de, data_ate]
 
         # Add country filter if restricted
@@ -1246,6 +1273,14 @@ INDEX_HTML = """<!DOCTYPE html>
                     <input type="text" name="tour" value="{{ tour_filter }}" placeholder="Tour..." style="width:160px">
                 </div>
                 <div>
+                    <label>Status</label>
+                    <select name="status" style="min-width:120px">
+                        <option value="">Ativos</option>
+                        <option value="cancelados" {% if status_filter == 'cancelados' %}selected{% endif %}>Cancelados</option>
+                        <option value="todos" {% if status_filter == 'todos' %}selected{% endif %}>Todos</option>
+                    </select>
+                </div>
+                <div>
                     <button type="submit" class="btn btn-primary">Buscar</button>
                 </div>
                 <div>
@@ -1253,7 +1288,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </div>
                 {% if user.pode_exportar %}
                 <div>
-                    <a href="{{ url_for('export_csv', q=q, data_de=data_de, data_ate=data_ate, vendedor=vendedor, destino=destino_filter, pais=pais_filter) }}" class="btn btn-success btn-sm">CSV</a>
+                    <a href="{{ url_for('export_csv', q=q, data_de=data_de, data_ate=data_ate, vendedor=vendedor, destino=destino_filter, pais=pais_filter, status=status_filter) }}" class="btn btn-success btn-sm">CSV</a>
                 </div>
                 {% endif %}
             </div>
@@ -1299,21 +1334,21 @@ INDEX_HTML = """<!DOCTYPE html>
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">← Anterior</a>
+        <a href="?page={{ page-1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}&status={{ status_filter }}">← Anterior</a>
         {% endif %}
 
         {% for p in range(1, total_pages+1) %}
             {% if p == page %}
                 <span class="active">{{ p }}</span>
             {% elif p <= 3 or p >= total_pages-2 or (p >= page-2 and p <= page+2) %}
-                <a href="?page={{ p }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">{{ p }}</a>
+                <a href="?page={{ p }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}&status={{ status_filter }}">{{ p }}</a>
             {% elif p == 4 or p == total_pages-3 %}
                 <span class="info">...</span>
             {% endif %}
         {% endfor %}
 
         {% if page < total_pages %}
-        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}">Próxima →</a>
+        <a href="?page={{ page+1 }}&q={{ q }}&data_de={{ data_de }}&data_ate={{ data_ate }}&vendedor={{ vendedor }}&destino={{ destino_filter }}&pais={{ pais_filter }}&tour={{ tour_filter }}&status={{ status_filter }}">Próxima →</a>
         {% endif %}
         <span class="info">{{ total }} vendas · Página {{ page }}/{{ total_pages }}</span>
     </div>
