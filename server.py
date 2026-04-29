@@ -670,31 +670,6 @@ def admin_access_log():
     """).fetchall()
     return render_template_string(ACCESS_LOG_HTML, logs=logs, user=session)
 
-@app.route("/admin/stats")
-@admin_required
-def admin_stats():
-    db = get_db()
-    total_vendas = db.execute("SELECT COUNT(*) FROM vendas").fetchone()[0]
-    total_obs = db.execute("SELECT COUNT(*) FROM venda_obs").fetchone()[0]
-    total_anexos = db.execute("SELECT COUNT(*) FROM venda_anexos").fetchone()[0]
-    by_month = db.execute("""
-        SELECT ano, mes, COUNT(*) as qtd, COUNT(DISTINCT vendedor) as vendedores
-        FROM vendas GROUP BY ano, mes ORDER BY ano, mes
-    """).fetchall()
-    by_vendedor = db.execute("""
-        SELECT vendedor, COUNT(*) as qtd FROM vendas
-        WHERE vendedor != '' GROUP BY vendedor ORDER BY qtd DESC LIMIT 20
-    """).fetchall()
-    return render_template_string(
-        ADMIN_STATS_HTML,
-        total_vendas=total_vendas,
-        total_obs=total_obs,
-        total_anexos=total_anexos,
-        by_month=by_month,
-        by_vendedor=by_vendedor,
-        user=session
-    )
-
 # ─── Data Import ─────────────────────────────────────────────────────────────
 
 @app.route("/admin/import", methods=["GET", "POST"])
@@ -1195,7 +1170,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('previsao') }}">Previsão</a>
         {% if user.role == 'admin' %}
-        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
@@ -1428,7 +1403,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('previsao') }}">Previsão</a>
-        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+
         <a href="{{ url_for('admin_users') }}" style="color:#f8fafc">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
@@ -1504,54 +1479,6 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
 </div>
 </body></html>"""
 
-ADMIN_STATS_HTML = """<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Estatísticas — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
-<div class="navbar">
-    <div class="brand">BYE<span>RESERVAME</span></div>
-    <nav>
-        <a href="{{ url_for('index') }}">Vendas</a>
-        <a href="{{ url_for('previsao') }}">Previsão</a>
-        <a href="{{ url_for('admin_stats') }}" style="color:#f8fafc">Estatísticas</a>
-        <a href="{{ url_for('admin_users') }}">Usuários</a>
-        <a href="{{ url_for('admin_access_log') }}">Acessos</a>
-        <a href="{{ url_for('admin_import') }}">Importar</a>
-    </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
-</div>
-<div class="container">
-    <div class="stats-bar">
-        <div class="stat-card"><div class="num">{{ "{:,}".format(total_vendas).replace(",",".") }}</div><div class="label">Total Vendas</div></div>
-        <div class="stat-card"><div class="num">{{ "{:,}".format(total_obs).replace(",",".") }}</div><div class="label">Observações</div></div>
-        <div class="stat-card"><div class="num">{{ "{:,}".format(total_anexos).replace(",",".") }}</div><div class="label">Anexos</div></div>
-    </div>
-
-    <div class="detail-card">
-        <h3>Vendas por Mês</h3>
-        <table>
-            <thead><tr><th>Ano</th><th>Mês</th><th>Vendas</th><th>Vendedores</th></tr></thead>
-            <tbody>
-            {% for m in by_month %}
-            <tr><td>{{ m.ano }}</td><td>{{ m.mes }}</td><td>{{ m.qtd }}</td><td>{{ m.vendedores }}</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="detail-card">
-        <h3>Top 20 Vendedores</h3>
-        <table>
-            <thead><tr><th>#</th><th>Vendedor</th><th>Vendas</th></tr></thead>
-            <tbody>
-            {% for v in by_vendedor %}
-            <tr><td>{{ loop.index }}</td><td>{{ v.vendedor }}</td><td>{{ v.qtd }}</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-</body></html>"""
-
 ADMIN_IMPORT_HTML = """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Importar — BYERESERVAME</title>""" + BASE_CSS + """</head><body>
@@ -1560,7 +1487,7 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('previsao') }}">Previsão</a>
-        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}" style="color:#f8fafc">Importar</a>
@@ -1613,7 +1540,7 @@ ACCESS_LOG_HTML = """<!DOCTYPE html>
     <nav>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('previsao') }}">Previsão</a>
-        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}" style="color:#f8fafc">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
@@ -1731,7 +1658,7 @@ PREVISAO_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('index') }}">Vendas</a>
         <a href="{{ url_for('previsao') }}" data-current="true">Previsão</a>
         {% if user.role == 'admin' %}
-        <a href="{{ url_for('admin_stats') }}">Estatísticas</a>
+
         <a href="{{ url_for('admin_users') }}">Usuários</a>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
