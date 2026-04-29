@@ -1038,7 +1038,7 @@ BASE_CSS = """
 
     .navbar { background: #1e293b; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
     .navbar .brand { font-size: 20px; font-weight: 700; color: #38bdf8; letter-spacing: 1px; }
-    .navbar .brand span { color: #f43f5e; }
+    .navbar .brand span { color: #ffffff; }
     .navbar nav a { color: #94a3b8; text-decoration: none; margin-left: 20px; font-size: 14px; transition: color 0.2s; }
     .navbar nav a:hover { color: #f8fafc; }
     .navbar .user-info { color: #64748b; font-size: 13px; }
@@ -1172,7 +1172,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <title>BYERESERVAME — Login</title>""" + BASE_CSS + """</head><body>
 <div class="login-container">
     <div class="login-box">
-        <h1><span style="color:#38bdf8">BYE</span><span style="color:#f43f5e">RESERVAME</span></h1>
+        <h1><span style="color:#38bdf8">BYE</span><span style="color:#ffffff">RESERVAME</span></h1>
         <div class="subtitle">LC Turismo — Sistema de Vendas</div>
         {% for cat, msg in get_flashed_messages(with_categories=true) %}
         <div class="flash flash-{{ cat }}">{{ msg }}</div>
@@ -1201,7 +1201,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('admin_import') }}">Importar</a>
         {% endif %}
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -1433,7 +1433,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -1471,7 +1471,7 @@ label{display:block;color:#94a3b8;font-size:12px;margin-bottom:2px}
             <td><span class="badge {% if u.role == 'admin' %}badge-anexo{% else %}badge-obs{% endif %}">{{ u.role }}</span></td>
             <td>{{ u.paises_acesso if u.paises_acesso else 'ALL' }}</td>
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ u.vendedores_acesso if u.vendedores_acesso else 'ALL' }}">{{ u.vendedores_acesso if u.vendedores_acesso else 'ALL' }}</td>
-            <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#f43f5e">Não</span>{% endif %}</td>
+            <td>{% if u.pode_exportar %}<span style="color:#22c55e">Sim</span>{% else %}<span style="color:#94a3b8">Não</span>{% endif %}</td>
             <td>{{ u.created_at[:10] if u.created_at else '' }}</td>
             <td style="white-space:nowrap">
                 {% if u.id != user.user_id %}
@@ -1517,7 +1517,7 @@ ADMIN_STATS_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 <div class="container">
     <div class="stats-bar">
@@ -1565,7 +1565,7 @@ ADMIN_IMPORT_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('admin_access_log') }}">Acessos</a>
         <a href="{{ url_for('admin_import') }}" style="color:#f8fafc">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 <div class="container">
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
@@ -1618,7 +1618,7 @@ ACCESS_LOG_HTML = """<!DOCTYPE html>
         <a href="{{ url_for('admin_access_log') }}" style="color:#f8fafc">Acessos</a>
         <a href="{{ url_for('admin_import') }}">Importar</a>
     </nav>
-    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#f43f5e">Sair</a></div>
+    <div class="user-info">{{ user.nome }} · <a href="{{ url_for('logout') }}" style="color:#94a3b8">Sair</a></div>
 </div>
 <div class="container">
     <div class="detail-card">
@@ -1649,7 +1649,7 @@ PREVISAO_HTML = """<!DOCTYPE html>
 <style>
     .previsao-navbar { background: #1e293b; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
     .previsao-navbar .brand { font-size: 20px; font-weight: 700; color: #38bdf8; letter-spacing: 1px; }
-    .previsao-navbar .brand span { color: #f43f5e; }
+    .previsao-navbar .brand span { color: #ffffff; }
     .previsao-navbar nav a { color: #94a3b8; text-decoration: none; margin-left: 20px; font-size: 14px; transition: color 0.2s; }
     .previsao-navbar nav a:hover { color: #f8fafc; }
     .previsao-navbar nav a[data-current=true] { color: #f8fafc; }
@@ -1699,27 +1699,27 @@ PREVISAO_HTML = """<!DOCTYPE html>
     .pax-1-4 { background: rgba(52, 211, 153, 0.1); color: #10b981; }
     .pax-5-9 { background: rgba(251, 191, 36, 0.12); color: #f59e0b; }
     .pax-10-14 { background: rgba(244, 114, 182, 0.12); color: #ec4899; }
-    .pax-15 { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .pax-15 { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
 
     .total-bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; }
     .total-day { text-align: center; }
     .total-day .date { color: #94a3b8; font-size: 12px; margin-bottom: 4px; }
     .total-day .value { font-size: 20px; font-weight: 700; color: #38bdf8; }
 
-    .destino-chile { border-left: 4px solid #dc2626; }
+    .destino-chile { border-left: 4px solid #1e40af; }
     .destino-peru { border-left: 4px solid #d97706; }
     .destino-colombia { border-left: 4px solid #059669; }
     .destino-argentina { border-left: 4px solid #2563eb; }
     .destino-republicadominicana { border-left: 4px solid #7c3aed; }
-    .destino-mexico { border-left: 4px solid #db2777; }
+    .destino-mexico { border-left: 4px solid #0891b2; }
     .destino-default { border-left: 4px solid #6366f1; }
 
-    .destino-header.chile { background: linear-gradient(90deg, #dc2626 0%, transparent 100%); }
+    .destino-header.chile { background: linear-gradient(90deg, #1e40af 0%, transparent 100%); }
     .destino-header.peru { background: linear-gradient(90deg, #d97706 0%, transparent 100%); }
     .destino-header.colombia { background: linear-gradient(90deg, #059669 0%, transparent 100%); }
     .destino-header.argentina { background: linear-gradient(90deg, #2563eb 0%, transparent 100%); }
     .destino-header.republicadominicana { background: linear-gradient(90deg, #7c3aed 0%, transparent 100%); }
-    .destino-header.mexico { background: linear-gradient(90deg, #db2777 0%, transparent 100%); }
+    .destino-header.mexico { background: linear-gradient(90deg, #0891b2 0%, transparent 100%); }
     .destino-header.default { background: linear-gradient(90deg, #6366f1 0%, transparent 100%); }
 
     .no-data { text-align: center; color: #64748b; padding: 40px; font-style: italic; }
