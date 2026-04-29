@@ -517,6 +517,59 @@ def venda_detail(ce_id):
 
     return render_template_string(DETAIL_HTML, venda=venda, obs=obs, anexos=anexos, user=session)
 
+@app.route("/venda/<ce_id>/cancelar", methods=["POST"])
+@login_required
+def cancelar_venda(ce_id):
+    db = get_db()
+    venda = db.execute("SELECT * FROM vendas WHERE ce_id = ?", (ce_id,)).fetchone()
+    if not venda:
+        flash("Venda não encontrada.", "error")
+        return redirect(url_for("index"))
+
+    motivo = request.form.get("motivo", "").strip()
+    if not motivo:
+        flash("Observação obrigatória para cancelar.", "error")
+        return redirect(url_for("venda_detail", ce_id=ce_id))
+
+    # Update: set cancelado=1 and append CANCELADO to nome
+    nome_atual = venda["nome"] or ""
+    if not nome_atual.endswith("CANCELADO"):
+        novo_nome = nome_atual + "CANCELADO"
+    else:
+        novo_nome = nome_atual
+
+    db.execute("UPDATE vendas SET cancelado = 1, nome = ? WHERE ce_id = ?", (novo_nome, ce_id))
+
+    # Add observation with timestamp and user
+    obs_text = f"[CANCELADO {datetime.now().strftime('%d/%m/%Y %H:%M')} por {session.get('nome', '?')}] {motivo}"
+    db.execute("INSERT INTO venda_obs (ce_id, obs) VALUES (?, ?)", (ce_id, obs_text))
+    db.commit()
+
+    flash(f"Venda {ce_id} cancelada com sucesso.", "success")
+    return redirect(url_for("venda_detail", ce_id=ce_id))
+
+@app.route("/venda/<ce_id>/reativar", methods=["POST"])
+@login_required
+def reativar_venda(ce_id):
+    db = get_db()
+    venda = db.execute("SELECT * FROM vendas WHERE ce_id = ?", (ce_id,)).fetchone()
+    if not venda:
+        flash("Venda não encontrada.", "error")
+        return redirect(url_for("index"))
+
+    # Remove CANCELADO from nome
+    nome_atual = venda["nome"] or ""
+    novo_nome = nome_atual.replace("CANCELADO", "").strip()
+
+    db.execute("UPDATE vendas SET cancelado = 0, nome = ? WHERE ce_id = ?", (novo_nome, ce_id))
+
+    obs_text = f"[REATIVADO {datetime.now().strftime('%d/%m/%Y %H:%M')} por {session.get('nome', '?')}]"
+    db.execute("INSERT INTO venda_obs (ce_id, obs) VALUES (?, ?)", (ce_id, obs_text))
+    db.commit()
+
+    flash(f"Venda {ce_id} reativada com sucesso.", "success")
+    return redirect(url_for("venda_detail", ce_id=ce_id))
+
 @app.route("/export")
 @login_required
 def export_csv():
@@ -1310,10 +1363,10 @@ INDEX_HTML = """<!DOCTYPE html>
         </thead>
         <tbody>
         {% for r in rows %}
-            <tr>
+            <tr{% if r.cancelado %} style="opacity:0.6"{% endif %}>
                 <td><a href="{{ url_for('venda_detail', ce_id=r.ce_id) }}">{{ r.ce_id }}</a></td>
                 <td>{{ r.data }}</td>
-                <td>{{ r.nome[:35] }}{% if r.nome|length > 35 %}...{% endif %}</td>
+                <td>{{ r.nome[:35] }}{% if r.nome|length > 35 %}...{% endif %}{% if r.cancelado %} <span style="background:#1e40af;color:#93c5fd;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">CANC</span>{% endif %}</td>
                 <td>{{ r.tour[:30] }}{% if r.tour|length > 30 %}...{% endif %}</td>
                 <td><span class="badge badge-pais">{{ r.pais }}</span></td>
                 <td><span class="badge badge-destino">{{ r.destino }}</span></td>
@@ -1368,7 +1421,7 @@ DETAIL_HTML = """<!DOCTYPE html>
 </div>
 <div class="container">
     <div class="detail-card">
-        <h3>Venda {{ venda.ce_id }}</h3>
+        <h3>Venda {{ venda.ce_id }}{% if venda.cancelado %} <span style="background:#1e40af;color:#93c5fd;padding:3px 10px;border-radius:6px;font-size:13px;font-weight:600;margin-left:8px">CANCELADO</span>{% endif %}</h3>
         <div class="detail-grid">
             <div class="detail-field"><div class="label">ID</div><div class="value">{{ venda.ce_id }}</div></div>
             <div class="detail-field"><div class="label">Data</div><div class="value">{{ venda.data }}</div></div>
@@ -1434,6 +1487,25 @@ DETAIL_HTML = """<!DOCTYPE html>
         </script>
         {% else %}
         <p style="color:#64748b">Nenhum anexo encontrado.</p>
+        {% endif %}
+    </div>
+
+    <div class="detail-card">
+        {% if not venda.cancelado %}
+        <h3>Cancelar Reserva</h3>
+        <form method="POST" action="{{ url_for('cancelar_venda', ce_id=venda.ce_id) }}" onsubmit="return confirm('Tem certeza que deseja cancelar esta venda?')">
+            <div style="margin-bottom:12px">
+                <label style="display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Motivo do cancelamento *</label>
+                <textarea name="motivo" required placeholder="Descreva o motivo do cancelamento..." style="width:100%;min-height:80px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:8px;font-size:14px;resize:vertical"></textarea>
+            </div>
+            <button type="submit" style="background:#1e40af;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Cancelar Reserva</button>
+        </form>
+        {% else %}
+        <h3>Reserva Cancelada</h3>
+        <p style="color:#93c5fd;margin-bottom:12px">Esta reserva está cancelada.</p>
+        <form method="POST" action="{{ url_for('reativar_venda', ce_id=venda.ce_id) }}" onsubmit="return confirm('Reativar esta venda?')">
+            <button type="submit" style="background:#1e3a5f;color:#93c5fd;border:1px solid #2563eb;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Reativar Reserva</button>
+        </form>
         {% endif %}
     </div>
 </div>
