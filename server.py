@@ -990,7 +990,7 @@ def api_previsao_data():
             allowed_vendedores = [v.strip() for v in user_vendedores.split(",") if v.strip()]
 
         # Query with GROUP BY
-        query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ?"
+        query = "SELECT tour, data, pais, destino, SUM(CAST(pax AS INTEGER)) as total_pax FROM vendas WHERE data >= ? AND data <= ? AND LOWER(tour) NOT LIKE '%desconto%'"
         params = [data_de, data_ate]
 
         # Add country filter if restricted
@@ -1968,6 +1968,12 @@ function renderPrevisao(tours, dataDe, dataAte) {
         const colorClass = colorMap[pais] || 'default';
         const tounsInDestino = grouped[destino];
 
+        // Skip destino if no tours have PAX > 0 in the week
+        const hasActiveTours = Object.values(tounsInDestino).some(tourDays =>
+            dates.some(d => (tourDays[d] || 0) > 0)
+        );
+        if (!hasActiveTours) return;
+
         html += `<div class="destino-group destino-${colorClass}">
             <div class="destino-header ${colorClass}" onclick="toggleDestino(event)">
                 <div class="title">
@@ -1995,6 +2001,11 @@ function renderPrevisao(tours, dataDe, dataAte) {
         let destTotal = {};
         Object.keys(tounsInDestino).sort().forEach(tourName => {
             const tourDays = tounsInDestino[tourName];
+
+            // Skip tours with 0 PAX in the entire week
+            const weekPax = dates.reduce((sum, d) => sum + (tourDays[d] || 0), 0);
+            if (weekPax <= 0) return;
+
             let tourTotal = 0;
 
             html += '<tr>';
