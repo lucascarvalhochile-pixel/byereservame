@@ -2014,7 +2014,7 @@ function renderPrevisao(tours, dataDe, dataAte) {
                 else if (pax >= 1) paxClass = 'pax-1-4';
 
                 if (pax > 0) {
-                    const link = `/?tour=${encodeURIComponent(tour)}&data_de=${date}&data_ate=${date}`;
+                    const link = `/?tour=${encodeURIComponent(tourName)}&data_de=${date}&data_ate=${date}`;
                     html += `<td><a href="${link}" class="pax-cell ${paxClass} pax-link">${pax}</a></td>`;
                 } else {
                     html += `<td><div class="pax-cell ${paxClass}">—</div></td>`;
